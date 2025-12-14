@@ -82,9 +82,23 @@ export default function PuzzleBoard({
 
   const handleKeyPress = (e: React.KeyboardEvent, row: number, col: number) => {
     if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
       onCellChange(row, col, 0);
     } else if (e.key >= '1' && e.key <= String(size)) {
+      e.preventDefault();
       onCellChange(row, col, parseInt(e.key));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // Move to next empty cell
+      for (let r = row; r < size; r++) {
+        for (let c = r === row ? col + 1 : 0; c < size; c++) {
+          if (!board[r]?.[c] || board[r][c] === 0) {
+            onCellSelect(r, c);
+            cellRefs.current[r]?.[c]?.focus();
+            return;
+          }
+        }
+      }
     }
   };
 
@@ -145,11 +159,14 @@ export default function PuzzleBoard({
     const bgColor = hasError || hasRowDup || hasColDup 
       ? 'bg-[#FFE5E5]' 
       : isSelected 
-        ? 'bg-[#FFF4B3]' 
+        ? 'bg-[#E3F2FD]' 
         : 'bg-white';
+    
+    // Add blue border for selected cell
+    const selectedBorder = isSelected ? 'ring-2 ring-[#2196F3] ring-offset-1' : '';
 
     return {
-      base: `w-full h-full text-center text-2xl font-medium ${bgColor} ${borderStyles.join(' ')} focus:outline-none focus:ring-0`,
+      base: `w-full h-full text-center text-2xl font-medium ${bgColor} ${borderStyles.join(' ')} ${selectedBorder} focus:outline-none focus:ring-0`,
       hasError: hasError || hasRowDup || hasColDup,
     };
   };
@@ -175,13 +192,17 @@ export default function PuzzleBoard({
     return null;
   };
 
+  // Fixed cell size: 60px × 60px
+  const CELL_SIZE = 60;
+  const gridSize = size * CELL_SIZE;
+  
   return (
     <div
-      className="grid gap-0 mx-auto bg-white p-3 rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+      className="grid gap-0 mx-auto bg-white rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
       style={{
-        gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
-        maxWidth: '600px',
-        aspectRatio: '1',
+        gridTemplateColumns: `repeat(${size}, ${CELL_SIZE}px)`,
+        width: `${gridSize}px`,
+        height: `${gridSize}px`,
       }}
     >
       {Array.from({ length: size * size }, (_, i) => {
@@ -219,7 +240,7 @@ export default function PuzzleBoard({
               maxLength={1}
               style={{
                 fontFamily: "'Lora', Georgia, serif",
-                fontSize: size <= 5 ? '1.75rem' : size <= 7 ? '1.5rem' : '1.25rem',
+                fontSize: '1.5rem',
               }}
             />
           </div>

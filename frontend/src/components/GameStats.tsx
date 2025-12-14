@@ -5,15 +5,17 @@ interface GameStatsProps {
   timeElapsed: number;
   movesMade: number;
   hintsUsed: number;
+  checksUsed: number;
 }
 
 export default function GameStats({
   timeElapsed,
   movesMade,
   hintsUsed,
+  checksUsed,
 }: GameStatsProps) {
   return (
-    <div className="bg-white p-5 rounded-sm shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-[#E0E0E0]">
+    <div className="bg-white p-5 rounded-sm shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-[#E0E0E0] w-full">
       <h3 className="text-base font-semibold mb-4 text-[#1A1A1A] border-b border-[#E0E0E0] pb-2" style={{ fontFamily: "'Lora', Georgia, serif" }}>
         Statistics
       </h3>
@@ -29,6 +31,10 @@ export default function GameStats({
         <div className="flex justify-between items-baseline">
           <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Hints:</span>
           <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{hintsUsed}</span>
+        </div>
+        <div className="flex justify-between items-baseline">
+          <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Checks:</span>
+          <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{checksUsed}</span>
         </div>
       </div>
     </div>

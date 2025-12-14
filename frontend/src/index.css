@@ -35,6 +35,11 @@ body {
   min-height: 100vh;
 }
 
+/* Safe area for mobile devices */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 /* Refined input styling */
 input[type="text"] {
   font-family: 'Lora', Georgia, serif;
