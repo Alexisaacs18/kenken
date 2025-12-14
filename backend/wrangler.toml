@@ -1,7 +1,7 @@
 # backend/wrangler.toml
 # Configuration for the API Gateway Worker (TypeScript)
 
-name = "kenken-api-ts"        # Name of your API Worker
+name = "kenken"        # Name of your API Worker
 main = "src/index.ts"         # Entry point - adjust path if your TypeScript code is elsewhere
 compatibility_date = "2025-12-14"  # Use today's date or a recent one
 
