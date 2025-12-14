@@ -88,7 +88,7 @@ export default function PuzzleBoard({
     }
   };
 
-  // Get cell styling based on state
+  // Get cell styling based on state with proper cage border detection
   const getCellStyle = (row: number, col: number) => {
     const isSelected = selectedCell?.[0] === row && selectedCell?.[1] === col;
     const cage = getCageForCell(puzzle, row, col);
@@ -97,42 +97,64 @@ export default function PuzzleBoard({
     const colDupes = getColDuplicates(board, col, size);
     const hasRowDup = rowDupes.includes(col);
     const hasColDup = colDupes.includes(row);
-    const cageSatisfied = cage ? isCageSatisfied(cage, board) : false;
 
-    let borderClasses = '';
+    // Build border style string
+    const borderStyles: string[] = [];
+    
     if (cage) {
-      // Determine cage borders - check if adjacent cells are in same cage
       const cageCells = cage.cells.map(([r, c]) => `${r},${c}`);
-      const isTop = !cageCells.includes(`${row - 1},${col}`);
-      const isBottom = !cageCells.includes(`${row + 1},${col}`);
-      const isLeft = !cageCells.includes(`${row},${col - 1}`);
-      const isRight = !cageCells.includes(`${row},${col + 1}`);
-
-      if (isTop) borderClasses += ' border-t-2 ';
-      if (isBottom) borderClasses += ' border-b-2 ';
-      if (isLeft) borderClasses += ' border-l-2 ';
-      if (isRight) borderClasses += ' border-r-2 ';
-
-      if (cageSatisfied) {
-        borderClasses += ' border-green-500 ';
+      
+      // Check each border
+      const topInCage = cageCells.includes(`${row - 1},${col}`);
+      const bottomInCage = cageCells.includes(`${row + 1},${col}`);
+      const leftInCage = cageCells.includes(`${row},${col - 1}`);
+      const rightInCage = cageCells.includes(`${row},${col + 1}`);
+      
+      // Top border: thick if edge of cage or grid, thin if internal
+      if (row === 0 || !topInCage) {
+        borderStyles.push('border-t-[3px] border-t-[#1A1A1A]');
       } else {
-        borderClasses += ' border-gray-400 ';
+        borderStyles.push('border-t border-t-gray-300');
       }
+      
+      // Bottom border
+      if (row === size - 1 || !bottomInCage) {
+        borderStyles.push('border-b-[3px] border-b-[#1A1A1A]');
+      } else {
+        borderStyles.push('border-b border-b-gray-300');
+      }
+      
+      // Left border
+      if (col === 0 || !leftInCage) {
+        borderStyles.push('border-l-[3px] border-l-[#1A1A1A]');
+      } else {
+        borderStyles.push('border-l border-l-gray-300');
+      }
+      
+      // Right border
+      if (col === size - 1 || !rightInCage) {
+        borderStyles.push('border-r-[3px] border-r-[#1A1A1A]');
+      } else {
+        borderStyles.push('border-r border-r-gray-300');
+      }
+    } else {
+      // No cage - use default borders
+      borderStyles.push('border border-gray-300');
     }
 
     const bgColor = hasError || hasRowDup || hasColDup 
-      ? 'bg-red-100' 
+      ? 'bg-[#FFE5E5]' 
       : isSelected 
-        ? 'bg-blue-50' 
+        ? 'bg-[#FFF4B3]' 
         : 'bg-white';
 
     return {
-      base: `w-full h-full text-center text-lg font-semibold border-2 ${bgColor} ${borderClasses}`,
+      base: `w-full h-full text-center text-2xl font-medium ${bgColor} ${borderStyles.join(' ')} focus:outline-none focus:ring-0`,
       hasError: hasError || hasRowDup || hasColDup,
     };
   };
 
-  // Get cage label (target and operator)
+  // Get cage label (target and operator) - NYT style
   const getCageLabel = (row: number, col: number) => {
     const cage = getCageForCell(puzzle, row, col);
     if (!cage) return null;
@@ -146,7 +168,8 @@ export default function PuzzleBoard({
 
     // Only show label on top-left cell
     if (row === topRow && col === topCol) {
-      return `${cage.target}${cage.operator === '=' ? '' : cage.operator}`;
+      const operator = cage.operator === '=' ? '' : cage.operator;
+      return { target: cage.target, operator };
     }
 
     return null;
@@ -154,7 +177,7 @@ export default function PuzzleBoard({
 
   return (
     <div
-      className="grid gap-0 mx-auto bg-white p-2 rounded-lg shadow-lg"
+      className="grid gap-0 mx-auto bg-white p-3 rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
       style={{
         gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
         maxWidth: '600px',
@@ -171,8 +194,13 @@ export default function PuzzleBoard({
         return (
           <div key={`${row}-${col}`} className="relative">
             {cageLabel && (
-              <div className="absolute top-0 left-0 text-xs font-bold text-gray-700 bg-white px-1 z-10">
-                {cageLabel}
+              <div className="absolute top-1 left-1 text-[10px] font-medium text-[#1A1A1A] leading-tight z-10 pointer-events-none">
+                <div className="flex items-baseline gap-0.5">
+                  <span>{cageLabel.target}</span>
+                  {cageLabel.operator && (
+                    <span className="text-[9px] opacity-75">{cageLabel.operator}</span>
+                  )}
+                </div>
               </div>
             )}
             <input
@@ -187,8 +215,12 @@ export default function PuzzleBoard({
               onChange={(e) => handleCellChange(row, col, e.target.value)}
               onFocus={() => handleCellFocus(row, col)}
               onKeyDown={(e) => handleKeyPress(e, row, col)}
-              className={cellStyle.base}
+              className={`${cellStyle.base} text-[#1A1A1A] placeholder:text-gray-300`}
               maxLength={1}
+              style={{
+                fontFamily: "'Lora', Georgia, serif",
+                fontSize: size <= 5 ? '1.75rem' : size <= 7 ? '1.5rem' : '1.25rem',
+              }}
             />
           </div>
         );

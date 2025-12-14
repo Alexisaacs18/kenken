@@ -13,20 +13,22 @@ export default function GameStats({
   hintsUsed,
 }: GameStatsProps) {
   return (
-    <div className="bg-white p-4 rounded-lg shadow-lg">
-      <h3 className="text-lg font-semibold mb-3">Statistics</h3>
-      <div className="space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Time:</span>
-          <span className="font-semibold">{formatTime(timeElapsed)}</span>
+    <div className="bg-white p-5 rounded-sm shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-[#E0E0E0]">
+      <h3 className="text-base font-semibold mb-4 text-[#1A1A1A] border-b border-[#E0E0E0] pb-2" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+        Statistics
+      </h3>
+      <div className="space-y-3 text-sm">
+        <div className="flex justify-between items-baseline">
+          <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Time:</span>
+          <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{formatTime(timeElapsed)}</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Moves:</span>
-          <span className="font-semibold">{movesMade}</span>
+        <div className="flex justify-between items-baseline">
+          <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Moves:</span>
+          <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{movesMade}</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Hints:</span>
-          <span className="font-semibold">{hintsUsed}</span>
+        <div className="flex justify-between items-baseline">
+          <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Hints:</span>
+          <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{hintsUsed}</span>
         </div>
       </div>
     </div>

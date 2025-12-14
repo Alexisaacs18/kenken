@@ -1,18 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Lora:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  /* NYT-inspired color palette */
+  --nyt-bg: #F7F6F3;
+  --nyt-cell: #FFFFFF;
+  --nyt-border: #1A1A1A;
+  --nyt-selected: #FFF4B3;
+  --nyt-error: #FFE5E5;
+  --nyt-text: #1A1A1A;
+  --nyt-text-light: #666666;
+  
+  font-family: 'Lora', 'Crimson Text', Georgia, 'Times New Roman', serif;
+  line-height: 1.6;
   font-weight: 400;
+  letter-spacing: 0.01em;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  background-color: var(--nyt-bg);
+  color: var(--nyt-text);
+  /* Subtle paper texture */
+  background-image: 
+    radial-gradient(circle at 1px 1px, rgba(0,0,0,0.02) 1px, transparent 0);
+  background-size: 20px 20px;
 }
 
 #root {
   min-height: 100vh;
+}
+
+/* Refined input styling */
+input[type="text"] {
+  font-family: 'Lora', Georgia, serif;
+  letter-spacing: 0.02em;
 }
