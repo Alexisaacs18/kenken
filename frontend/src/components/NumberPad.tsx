@@ -32,59 +32,59 @@ export default function NumberPad({
 
   return (
     <div className="w-full max-w-5xl mx-auto px-2">
-      {/* Single row layout - wraps on mobile if needed */}
-      <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
-        {/* Number buttons - left/center */}
-        {numbers.map((num) => (
+      {/* Two-row layout */}
+      <div className="flex flex-col items-center gap-3">
+        {/* Top row: Number buttons - always centered */}
+        <div className="flex items-center justify-center gap-2 md:gap-3">
+          {numbers.map((num) => (
+            <button
+              key={num}
+              onClick={() => onNumberClick(num)}
+              className={numberButtonClass}
+              style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '80px', width: '80px', height: '44px' }}
+            >
+              {num}
+            </button>
+          ))}
+        </div>
+
+        {/* Bottom row: Control buttons - centered */}
+        <div className="flex items-center justify-center gap-2 md:gap-3">
           <button
-            key={num}
-            onClick={() => onNumberClick(num)}
-            className={numberButtonClass}
-            style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '80px', width: '80px', height: '44px' }}
+            onClick={onDelete}
+            className={actionButtonClass}
+            style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '70px', height: '44px' }}
           >
-            {num}
+            Del
           </button>
-        ))}
-
-        {/* Del and Undo buttons */}
-        <button
-          onClick={onDelete}
-          className={actionButtonClass}
-          style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '70px', height: '44px' }}
-        >
-          Del
-        </button>
-        <button
-          onClick={onUndo}
-          disabled={!canUndo}
-          className={`${actionButtonClass} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-[#E0E0E0] flex items-center justify-center gap-1.5`}
-          style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '90px', height: '44px' }}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-          </svg>
-          Undo
-        </button>
-
-        {/* Check button */}
-        <button
-          onClick={onCheck}
-          disabled={checksRemaining === 0}
-          className={checkButtonClass}
-          style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '90px', height: '44px' }}
-        >
-          Check ({checksRemaining})
-        </button>
-
-        {/* Hint button - right */}
-        <button
-          onClick={onHint}
-          disabled={hintsRemaining === 0}
-          className={hintButtonClass}
-          style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '90px', height: '44px' }}
-        >
-          Hint ({hintsRemaining})
-        </button>
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className={`${actionButtonClass} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-[#E0E0E0] flex items-center justify-center gap-1.5`}
+            style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '90px', height: '44px' }}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+            Undo
+          </button>
+          <button
+            onClick={onCheck}
+            disabled={checksRemaining === 0}
+            className={checkButtonClass}
+            style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '90px', height: '44px' }}
+          >
+            Check ({checksRemaining})
+          </button>
+          <button
+            onClick={onHint}
+            disabled={hintsRemaining === 0}
+            className={hintButtonClass}
+            style={{ fontFamily: "'Lora', Georgia, serif", minWidth: '90px', height: '44px' }}
+          >
+            Hint ({hintsRemaining})
+          </button>
+        </div>
       </div>
     </div>
   );
