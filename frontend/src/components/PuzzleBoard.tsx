@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
-import type { Puzzle, Cage } from '../types';
-import { getCageForCell, isCageSatisfied, getRowDuplicates, getColDuplicates } from '../utils/puzzleUtils';
+import { useEffect, useRef } from 'react';
+import type { Puzzle } from '../types';
+import { getCageForCell, getRowDuplicates, getColDuplicates } from '../utils/puzzleUtils';
 
 interface PuzzleBoardProps {
   puzzle: Puzzle;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import type { Algorithm } from '../types';
 import { generatePuzzle } from '../api';
 

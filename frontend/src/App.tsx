@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import PuzzleBoard from './components/PuzzleBoard';
 import GameStats from './components/GameStats';
 import NumberPad from './components/NumberPad';
@@ -32,7 +32,7 @@ function App() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
-  const [algorithm, setAlgorithm] = useState<Algorithm>('FC+MRV');
+  const [algorithm] = useState<Algorithm>('FC+MRV');
   const [dailyPuzzleInfo, setDailyPuzzleInfo] = useState(getTodayPuzzleInfo());
   const [isDailyPuzzle, setIsDailyPuzzle] = useState(true);
 
@@ -121,6 +121,44 @@ function App() {
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   }, [history, historyIndex]);
+
+  // Handle loading daily puzzle
+  const handleDailyPuzzle = async () => {
+    const todayInfo = getTodayPuzzleInfo();
+    setDailyPuzzleInfo(todayInfo);
+    setIsDailyPuzzle(true);
+    setSelectedDifficulty(null);
+    setLoading(true);
+    
+    try {
+      const response = await generatePuzzle(todayInfo.size, algorithm, todayInfo.seed);
+      setPuzzle(response.puzzle);
+      const newBoard = initializeBoard(response.puzzle.size);
+      setBoard(newBoard);
+      setGameStats({
+        timeElapsed: 0,
+        movesMade: 0,
+        hintsUsed: 0,
+        startTime: Date.now(),
+      });
+      setChecksUsed(0);
+      setHintsRemaining(3);
+      setChecksRemaining(3);
+      setHistory([JSON.parse(JSON.stringify(newBoard))]);
+      setHistoryIndex(0);
+      setSolved(false);
+      setErrors([]);
+      setShowSideMenu(false);
+    } catch (error) {
+      console.error('Error loading daily puzzle:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Failed to load daily puzzle. Make sure the backend is running.';
+      alert(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Handle puzzle generation from side menu (practice mode)
   const handleDifficultySelect = async (size: number) => {
@@ -234,14 +272,6 @@ function App() {
     }
   };
 
-  // Handle redo
-  const handleRedo = () => {
-    if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      setBoard(JSON.parse(JSON.stringify(history[newIndex])));
-    }
-  };
 
   // Handle number pad delete
   const handleNumberPadDelete = () => {
@@ -293,7 +323,7 @@ function App() {
                 puzzle={puzzle}
                 board={board}
                 selectedCell={selectedCell}
-                onCellSelect={setSelectedCell}
+                onCellSelect={(row, col) => setSelectedCell([row, col])}
                 onCellChange={handleCellChange}
                 errors={errors}
               />
@@ -381,12 +411,14 @@ function App() {
         isOpen={showSideMenu}
         onClose={() => setShowSideMenu(false)}
         onDifficultySelect={handleDifficultySelect}
+        onDailyPuzzle={handleDailyPuzzle}
         onShowTutorial={() => {
           setShowTutorial(true);
           setShowSideMenu(false);
         }}
         selectedDifficulty={selectedDifficulty}
         loading={loading}
+        isDailyPuzzle={isDailyPuzzle}
       />
 
       {/* Score Modal */}

@@ -1,4 +1,3 @@
-import React from 'react';
 
 interface Difficulty {
   label: string;
@@ -20,18 +19,22 @@ interface SideMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onDifficultySelect: (size: number) => void;
+  onDailyPuzzle: () => void;
   onShowTutorial: () => void;
   selectedDifficulty: number | null;
   loading: boolean;
+  isDailyPuzzle: boolean;
 }
 
 export default function SideMenu({
   isOpen,
   onClose,
   onDifficultySelect,
+  onDailyPuzzle,
   onShowTutorial,
   selectedDifficulty,
   loading,
+  isDailyPuzzle,
 }: SideMenuProps) {
   if (!isOpen) return null;
 
@@ -56,6 +59,39 @@ export default function SideMenu({
               className="text-[#666666] hover:text-[#1A1A1A] text-2xl leading-none"
             >
               ×
+            </button>
+          </div>
+
+          {/* Daily Puzzle Button */}
+          <div className="mb-6">
+            <button
+              onClick={() => {
+                onDailyPuzzle();
+                onClose();
+              }}
+              disabled={loading}
+              className={`
+                w-full px-4 py-3 rounded-sm font-medium border-2 text-left
+                transition-all duration-200
+                ${isDailyPuzzle 
+                  ? 'bg-[#FFF9E6] border-[#FFC107] shadow-sm' 
+                  : 'bg-white border-[#E0E0E0] hover:border-[#FFC107] hover:bg-[#FFF9E6]'
+                }
+                disabled:opacity-50 disabled:cursor-not-allowed
+                flex items-center justify-between
+                text-sm
+              `}
+              style={{ fontFamily: "'Lora', Georgia, serif" }}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>Daily Puzzle</span>
+              </div>
+              {isDailyPuzzle && (
+                <span className="text-xs text-[#666666]">Current</span>
+              )}
             </button>
           </div>
 

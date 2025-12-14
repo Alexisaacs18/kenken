@@ -1,4 +1,3 @@
-import React from 'react';
 import type { BenchmarkStats as Stats } from '../types';
 
 interface BenchmarkStatsProps {
