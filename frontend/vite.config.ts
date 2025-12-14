@@ -12,7 +12,8 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    proxy: {
+    // Proxy to Cloudflare Pages Functions in production, or local backend in dev
+    proxy: process.env.NODE_ENV === 'production' ? undefined : {
       '/api': {
         target: 'http://localhost:5001',
         changeOrigin: true,

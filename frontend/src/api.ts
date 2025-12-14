@@ -4,7 +4,9 @@
 
 import type { Puzzle, Algorithm, BenchmarkStats, Puzzle as PuzzleData } from './types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+// Use relative URLs in production (Cloudflare Pages Functions), absolute in dev
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD ? '' : 'http://localhost:5001');
 
 export interface GeneratePuzzleRequest {
   size: number;
