@@ -8,12 +8,12 @@ import TutorialModal from './components/TutorialModal';
 import type { Puzzle, Algorithm, GameStats as GameStatsType } from './types';
 import { generatePuzzle, validateBoard } from './api';
 import { isPuzzleSolved } from './utils/puzzleUtils';
+import { getTodayPuzzleInfo, getTomorrowPuzzleInfo, formatDateForDisplay, isPuzzleCompletedToday, markPuzzleCompletedToday } from './utils/dailyPuzzle';
 
 function App() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [board, setBoard] = useState<number[][]>([]);
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
-  const [benchmarkStats, setBenchmarkStats] = useState<Stats | null>(null);
   const [gameStats, setGameStats] = useState<GameStatsType>({
     timeElapsed: 0,
     movesMade: 0,
@@ -33,6 +33,8 @@ function App() {
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [algorithm, setAlgorithm] = useState<Algorithm>('FC+MRV');
+  const [dailyPuzzleInfo, setDailyPuzzleInfo] = useState(getTodayPuzzleInfo());
+  const [isDailyPuzzle, setIsDailyPuzzle] = useState(true);
 
   // Initialize board
   const initializeBoard = (puzzleSize: number) => {
@@ -55,19 +57,62 @@ function App() {
     return () => clearInterval(interval);
   }, [puzzle, solved]);
 
+  // Auto-load today's puzzle on mount
+  useEffect(() => {
+    // Only load if no puzzle is already loaded
+    if (puzzle) return;
+    
+    const loadDailyPuzzle = async () => {
+      const todayInfo = getTodayPuzzleInfo();
+      setDailyPuzzleInfo(todayInfo);
+      setIsDailyPuzzle(true);
+      setLoading(true);
+      
+      try {
+        const response = await generatePuzzle(todayInfo.size, algorithm, todayInfo.seed);
+        setPuzzle(response.puzzle);
+        const newBoard = initializeBoard(response.puzzle.size);
+        setBoard(newBoard);
+        setGameStats({
+          timeElapsed: 0,
+          movesMade: 0,
+          hintsUsed: 0,
+          startTime: Date.now(),
+        });
+        setChecksUsed(0);
+        setHintsRemaining(3);
+        setChecksRemaining(3);
+        setHistory([JSON.parse(JSON.stringify(newBoard))]);
+        setHistoryIndex(0);
+        setSolved(false);
+        setErrors([]);
+      } catch (error) {
+        console.error('Error loading daily puzzle:', error);
+        // Don't show alert for auto-load, just log
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadDailyPuzzle();
+  }, []); // Only run on mount
+
   // Check if puzzle is solved
   useEffect(() => {
     if (puzzle && board.length > 0 && !solved) {
       const isComplete = isPuzzleSolved(puzzle, board);
       if (isComplete) {
         setSolved(true);
+        if (isDailyPuzzle) {
+          markPuzzleCompletedToday();
+        }
         // Show score modal after a brief delay
         setTimeout(() => {
           setShowScoreModal(true);
         }, 500);
       }
     }
-  }, [puzzle, board, solved, showScoreModal]);
+  }, [puzzle, board, solved, showScoreModal, isDailyPuzzle]);
 
   // Save to history
   const saveToHistory = useCallback((newBoard: number[][]) => {
@@ -77,13 +122,14 @@ function App() {
     setHistoryIndex(newHistory.length - 1);
   }, [history, historyIndex]);
 
-  // Handle puzzle generation from side menu
+  // Handle puzzle generation from side menu (practice mode)
   const handleDifficultySelect = async (size: number) => {
     setSelectedDifficulty(size);
+    setIsDailyPuzzle(false); // This is practice mode, not daily puzzle
     setLoading(true);
     
     try {
-      const response = await generatePuzzle(size, algorithm);
+      const response = await generatePuzzle(size, algorithm); // No seed for practice mode
       setPuzzle(response.puzzle);
       const newBoard = initializeBoard(response.puzzle.size);
       setBoard(newBoard);
@@ -288,13 +334,42 @@ function App() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <p className="text-[#1A1A1A] text-lg font-medium" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-                  Tap ☰ to select a difficulty
-                </p>
-                <p className="text-[#666666] text-sm">
-                  Choose from Beginner to Expert
-                </p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-[#1A1A1A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <h2 className="text-2xl font-semibold text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                    Puzzle of the Day
+                  </h2>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-lg font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                    {dailyPuzzleInfo.dayOfWeek} - {dailyPuzzleInfo.difficulty}
+                  </p>
+                  <p className="text-sm text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                    {formatDateForDisplay(dailyPuzzleInfo.date)}
+                  </p>
+                </div>
+                {isPuzzleCompletedToday() && (
+                  <div className="mt-4 p-3 bg-[#E8F5E9] border border-[#4CAF50] rounded-sm">
+                    <p className="text-sm text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                      ✓ You've completed today's puzzle!
+                    </p>
+                  </div>
+                )}
+                {!isPuzzleCompletedToday() && (
+                  <div className="mt-4">
+                    <p className="text-xs text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                      Loading today's puzzle...
+                    </p>
+                  </div>
+                )}
+                <div className="mt-6 pt-4 border-t border-[#E5E5E3]">
+                  <p className="text-xs text-[#999999]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                    Come back tomorrow for {getTomorrowPuzzleInfo().difficulty}!
+                  </p>
+                </div>
               </div>
             )}
           </div>

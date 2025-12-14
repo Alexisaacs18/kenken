@@ -59,11 +59,14 @@ export default function SideMenu({
             </button>
           </div>
 
-          {/* Difficulty Selection */}
+          {/* Difficulty Selection - Practice Mode */}
           <div className="mb-8">
             <h3 className="text-sm font-medium text-[#666666] mb-3" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-              Select Difficulty
+              Practice Mode
             </h3>
+            <p className="text-xs text-[#999999] mb-3" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+              Select any difficulty to practice
+            </p>
             <div className="space-y-2">
               {DIFFICULTIES.map((difficulty) => {
                 const isSelected = selectedDifficulty === difficulty.size;

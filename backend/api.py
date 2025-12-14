@@ -86,9 +86,22 @@ def generate_puzzle():
         data = request.json
         size = data.get('size', 4)
         algorithm_name = data.get('algorithm', 'FC+MRV')
+        seed = data.get('seed', None)
+        
+        # Set random seed if provided for deterministic generation
+        if seed:
+            import random
+            # Convert seed string to integer for random seed
+            seed_hash = hash(seed)
+            random.seed(seed_hash)
         
         # Generate puzzle
         size, cliques = generate(size)
+        
+        # Reset random state if seed was used
+        if seed:
+            import random
+            random.seed()  # Reset to system time
         
         # Create Kenken CSP
         kenken = Kenken(size, cliques)

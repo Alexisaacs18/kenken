@@ -9,6 +9,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 export interface GeneratePuzzleRequest {
   size: number;
   algorithm: Algorithm;
+  seed?: string;
 }
 
 export interface GeneratePuzzleResponse {
@@ -45,15 +46,21 @@ export interface ValidateResponse {
  */
 export async function generatePuzzle(
   size: number,
-  algorithm: Algorithm
+  algorithm: Algorithm,
+  seed?: string
 ): Promise<GeneratePuzzleResponse> {
   try {
+    const body: GeneratePuzzleRequest = { size, algorithm };
+    if (seed) {
+      body.seed = seed;
+    }
+    
     const response = await fetch(`${API_BASE_URL}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ size, algorithm }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
