@@ -64,8 +64,9 @@ input[type="text"] {
 .puzzle-cell-input {
   width: 100%;
   height: 100%;
-  /* Responsive font size: scales with viewport, minimum 12px for readability */
-  font-size: max(12px, min(2.5vw, 1.5rem));
+  /* Responsive font size: scales with viewport, minimum 14px for readability */
+  font-size: max(14px, min(2.8vw, 1.75rem));
+  font-weight: 700; /* Bold for better visibility */
   /* Ensure text is centered */
   display: flex;
   align-items: center;
@@ -75,48 +76,114 @@ input[type="text"] {
   aspect-ratio: 1 / 1;
 }
 
-/* Responsive cage labels */
+/* Responsive cage labels - Enhanced visibility */
 .cage-label {
-  /* Scale with viewport, minimum 8px */
-  font-size: max(8px, min(1.8vw, 0.625rem));
+  /* Scale with viewport, minimum 9px for better visibility */
+  font-size: max(9px, min(2vw, 0.7rem));
   line-height: 1.2;
+  /* Add subtle shadow and background for contrast */
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.9), 0 0 1px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+.cage-label-content {
+  /* Ensure label stands out from cage borders */
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.8));
 }
 
 .cage-target {
-  font-weight: 600;
+  font-weight: 700; /* Bolder for better visibility */
+  color: #1A1A1A;
 }
 
 .cage-operator {
   font-size: 0.85em;
+  font-weight: 600;
+  color: #1A1A1A;
 }
 
 /* Ensure cells remain square on all screen sizes */
 @media (max-width: 640px) {
   .puzzle-cell-input {
-    font-size: max(14px, 3vw);
+    font-size: max(16px, 3.2vw);
+    font-weight: 700;
   }
   
   .cage-label {
-    font-size: max(9px, 2vw);
+    font-size: max(10px, 2.2vw);
   }
 }
 
 @media (min-width: 641px) and (max-width: 1024px) {
   .puzzle-cell-input {
-    font-size: max(16px, 2vw);
+    font-size: max(18px, 2.2vw);
+    font-weight: 700;
   }
   
   .cage-label {
-    font-size: max(10px, 1.5vw);
+    font-size: max(11px, 1.6vw);
   }
 }
 
 @media (min-width: 1025px) {
   .puzzle-cell-input {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
+    font-weight: 700;
   }
   
   .cage-label {
-    font-size: 0.625rem;
+    font-size: 0.7rem;
+  }
+}
+
+/* Hint highlight animation - subtle and non-intrusive */
+.hint-highlight {
+  background-color: #E3F2FD !important; /* Light blue */
+  animation: hintPulse 2s ease-out;
+}
+
+@keyframes hintPulse {
+  0% {
+    background-color: #BBDEFB; /* Slightly brighter blue */
+  }
+  100% {
+    background-color: #E3F2FD; /* Fade to lighter blue */
+  }
+}
+
+/* Check validation highlights - subtle colors */
+.check-correct-highlight {
+  background-color: #E8F5E9 !important; /* Subtle green */
+  animation: checkCorrectPulse 3s ease-out;
+}
+
+.check-incorrect-highlight {
+  background-color: #FFEBEE !important; /* Subtle red */
+  animation: checkIncorrectPulse 3s ease-out;
+}
+
+@keyframes checkCorrectPulse {
+  0% {
+    background-color: #C8E6C9; /* Slightly brighter green */
+  }
+  50% {
+    background-color: #E8F5E9; /* Fade to lighter green */
+  }
+  100% {
+    background-color: #FFFFFF; /* Return to white */
+  }
+}
+
+@keyframes checkIncorrectPulse {
+  0% {
+    background-color: #FFCDD2; /* Slightly brighter red */
+  }
+  50% {
+    background-color: #FFEBEE; /* Fade to lighter red */
+  }
+  100% {
+    background-color: #FFFFFF; /* Return to white */
   }
 }

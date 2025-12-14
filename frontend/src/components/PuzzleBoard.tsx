@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Puzzle } from '../types';
-import { getCageForCell, getRowDuplicates, getColDuplicates } from '../utils/puzzleUtils';
+import { getCageForCell } from '../utils/puzzleUtils';
 
 interface PuzzleBoardProps {
   puzzle: Puzzle;
@@ -9,6 +9,8 @@ interface PuzzleBoardProps {
   onCellSelect: (row: number, col: number) => void;
   onCellChange: (row: number, col: number, value: number) => void;
   errors?: { row: number; col: number; message: string }[];
+  hintHighlight?: [number, number] | null;
+  checkHighlights?: Map<string, 'correct' | 'incorrect'>;
 }
 
 export default function PuzzleBoard({
@@ -18,6 +20,8 @@ export default function PuzzleBoard({
   onCellSelect,
   onCellChange,
   errors = [],
+  hintHighlight = null,
+  checkHighlights = new Map(),
 }: PuzzleBoardProps) {
   const cellRefs = useRef<(HTMLInputElement | null)[][]>([]);
   const size = puzzle.size;
@@ -107,10 +111,10 @@ export default function PuzzleBoard({
     const isSelected = selectedCell?.[0] === row && selectedCell?.[1] === col;
     const cage = getCageForCell(puzzle, row, col);
     const hasError = errors.some((e) => e.row === row && e.col === col);
-    const rowDupes = getRowDuplicates(board, row, size);
-    const colDupes = getColDuplicates(board, col, size);
-    const hasRowDup = rowDupes.includes(col);
-    const hasColDup = colDupes.includes(row);
+    // Removed real-time duplicate highlighting - only show errors from manual check
+    const isHintHighlighted = hintHighlight?.[0] === row && hintHighlight?.[1] === col;
+    const cellKey = `${row},${col}`;
+    const checkHighlight = checkHighlights.get(cellKey);
 
     // Build border style string
     const borderStyles: string[] = [];
@@ -156,18 +160,26 @@ export default function PuzzleBoard({
       borderStyles.push('border border-gray-300');
     }
 
-    const bgColor = hasError || hasRowDup || hasColDup 
-      ? 'bg-[#FFE5E5]' 
-      : isSelected 
-        ? 'bg-[#E3F2FD]' 
-        : 'bg-white';
+    // Determine background color based on state (priority: check highlight > hint highlight > selected > default)
+    let bgColor = 'bg-white';
+    let highlightClass = '';
+    
+    if (checkHighlight === 'correct') {
+      highlightClass = 'check-correct-highlight';
+    } else if (checkHighlight === 'incorrect') {
+      highlightClass = 'check-incorrect-highlight';
+    } else if (isHintHighlighted) {
+      highlightClass = 'hint-highlight';
+    } else if (isSelected) {
+      bgColor = 'bg-[#E3F2FD]';
+    }
     
     // Add blue border for selected cell
     const selectedBorder = isSelected ? 'ring-2 ring-[#2196F3] ring-offset-1' : '';
 
     return {
-      base: `w-full h-full text-center font-medium ${bgColor} ${borderStyles.join(' ')} ${selectedBorder} focus:outline-none focus:ring-0`,
-      hasError: hasError || hasRowDup || hasColDup,
+      base: `w-full h-full text-center font-bold ${bgColor} ${borderStyles.join(' ')} ${selectedBorder} ${highlightClass} focus:outline-none focus:ring-0`,
+      hasError: hasError,
     };
   };
 
@@ -213,11 +225,11 @@ export default function PuzzleBoard({
         return (
           <div key={`${row}-${col}`} className="relative">
             {cageLabel && (
-              <div className="cage-label absolute top-0.5 left-0.5 font-medium text-[#1A1A1A] leading-tight z-10 pointer-events-none">
-                <div className="flex items-baseline gap-0.5">
+              <div className="cage-label absolute top-0.5 left-0.5 font-bold text-[#1A1A1A] leading-tight z-20 pointer-events-none">
+                <div className="flex items-baseline gap-0.5 cage-label-content">
                   <span className="cage-target">{cageLabel.target}</span>
                   {cageLabel.operator && (
-                    <span className="cage-operator opacity-75">{cageLabel.operator}</span>
+                    <span className="cage-operator opacity-90">{cageLabel.operator}</span>
                   )}
                 </div>
               </div>

@@ -28,6 +28,8 @@ function App() {
   const [history, setHistory] = useState<number[][][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [solved, setSolved] = useState(false);
+  const [hintHighlight, setHintHighlight] = useState<[number, number] | null>(null);
+  const [checkHighlights, setCheckHighlights] = useState<Map<string, 'correct' | 'incorrect'>>(new Map());
   const [showTutorial, setShowTutorial] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
@@ -232,6 +234,13 @@ function App() {
           handleCellChange(row, col, correctValue);
           setGameStats((prev) => ({ ...prev, hintsUsed: prev.hintsUsed + 1 }));
           setHintsRemaining(prev => Math.max(0, prev - 1));
+          
+          // Set hint highlight for 2 seconds
+          setHintHighlight([row, col]);
+          setTimeout(() => {
+            setHintHighlight(null);
+          }, 2000);
+          
           return;
         }
       }
@@ -244,20 +253,47 @@ function App() {
 
     try {
       const response = await validateBoard(puzzle, board);
-      setErrors(response.errors);
       setChecksUsed(prev => prev + 1);
       setChecksRemaining(prev => Math.max(0, prev - 1));
+      
+      // Create highlight map for visual feedback
+      const highlights = new Map<string, 'correct' | 'incorrect'>();
+      const errorCells = new Set(response.errors.map(e => `${e.row},${e.col}`));
+      
+      // Check each filled cell
+      for (let row = 0; row < puzzle.size; row++) {
+        for (let col = 0; col < puzzle.size; col++) {
+          if (board[row][col] > 0) {
+            const cellKey = `${row},${col}`;
+            if (errorCells.has(cellKey)) {
+              highlights.set(cellKey, 'incorrect');
+            } else {
+              // Check if it matches the solution
+              if (puzzle.solution && puzzle.solution[row][col] === board[row][col]) {
+                highlights.set(cellKey, 'correct');
+              } else {
+                highlights.set(cellKey, 'incorrect');
+              }
+            }
+          }
+        }
+      }
+      
+      setCheckHighlights(highlights);
+      
+      // Remove highlights after 3 seconds
+      setTimeout(() => {
+        setCheckHighlights(new Map());
+      }, 3000);
       
       if (response.valid) {
         // Check if puzzle is actually solved
         if (isPuzzleSolved(puzzle, board)) {
           setSolved(true);
-        } else {
-          alert('No errors found, but puzzle is not complete!');
         }
-      } else {
-        alert(`Found ${response.errors.length} error(s).`);
+        // No alert - visual feedback only
       }
+      // No alert for errors - visual feedback only
     } catch (error) {
       console.error('Error validating puzzle:', error);
     }
@@ -326,6 +362,8 @@ function App() {
                 onCellSelect={(row, col) => setSelectedCell([row, col])}
                 onCellChange={handleCellChange}
                 errors={errors}
+                hintHighlight={hintHighlight}
+                checkHighlights={checkHighlights}
               />
             </div>
 
