@@ -45,3 +45,78 @@ input[type="text"] {
   font-family: 'Lora', Georgia, serif;
   letter-spacing: 0.02em;
 }
+
+/* Responsive Puzzle Grid */
+.puzzle-grid {
+  display: grid;
+  gap: 0;
+  /* Grid columns are set dynamically via inline style: repeat(N, 1fr) */
+}
+
+/* Puzzle cell - ensures square aspect ratio */
+.puzzle-grid > div {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+}
+
+/* Responsive puzzle cell input */
+.puzzle-cell-input {
+  width: 100%;
+  height: 100%;
+  /* Responsive font size: scales with viewport, minimum 12px for readability */
+  font-size: max(12px, min(2.5vw, 1.5rem));
+  /* Ensure text is centered */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  /* Maintain square cells */
+  aspect-ratio: 1 / 1;
+}
+
+/* Responsive cage labels */
+.cage-label {
+  /* Scale with viewport, minimum 8px */
+  font-size: max(8px, min(1.8vw, 0.625rem));
+  line-height: 1.2;
+}
+
+.cage-target {
+  font-weight: 600;
+}
+
+.cage-operator {
+  font-size: 0.85em;
+}
+
+/* Ensure cells remain square on all screen sizes */
+@media (max-width: 640px) {
+  .puzzle-cell-input {
+    font-size: max(14px, 3vw);
+  }
+  
+  .cage-label {
+    font-size: max(9px, 2vw);
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .puzzle-cell-input {
+    font-size: max(16px, 2vw);
+  }
+  
+  .cage-label {
+    font-size: max(10px, 1.5vw);
+  }
+}
+
+@media (min-width: 1025px) {
+  .puzzle-cell-input {
+    font-size: 1.5rem;
+  }
+  
+  .cage-label {
+    font-size: 0.625rem;
+  }
+}

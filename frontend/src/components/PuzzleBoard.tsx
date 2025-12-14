@@ -166,7 +166,7 @@ export default function PuzzleBoard({
     const selectedBorder = isSelected ? 'ring-2 ring-[#2196F3] ring-offset-1' : '';
 
     return {
-      base: `w-full h-full text-center text-2xl font-medium ${bgColor} ${borderStyles.join(' ')} ${selectedBorder} focus:outline-none focus:ring-0`,
+      base: `w-full h-full text-center font-medium ${bgColor} ${borderStyles.join(' ')} ${selectedBorder} focus:outline-none focus:ring-0`,
       hasError: hasError || hasRowDup || hasColDup,
     };
   };
@@ -192,17 +192,15 @@ export default function PuzzleBoard({
     return null;
   };
 
-  // Fixed cell size: 60px × 60px
-  const CELL_SIZE = 60;
-  const gridSize = size * CELL_SIZE;
-  
+  // Responsive grid - uses CSS Grid with 1fr for flexible sizing
   return (
     <div
-      className="grid gap-0 mx-auto bg-white rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+      className="puzzle-grid mx-auto bg-white rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
       style={{
-        gridTemplateColumns: `repeat(${size}, ${CELL_SIZE}px)`,
-        width: `${gridSize}px`,
-        height: `${gridSize}px`,
+        gridTemplateColumns: `repeat(${size}, 1fr)`,
+        aspectRatio: '1 / 1',
+        maxWidth: 'min(95vw, 600px)',
+        width: '100%',
       }}
     >
       {Array.from({ length: size * size }, (_, i) => {
@@ -215,11 +213,11 @@ export default function PuzzleBoard({
         return (
           <div key={`${row}-${col}`} className="relative">
             {cageLabel && (
-              <div className="absolute top-1 left-1 text-[10px] font-medium text-[#1A1A1A] leading-tight z-10 pointer-events-none">
+              <div className="cage-label absolute top-0.5 left-0.5 font-medium text-[#1A1A1A] leading-tight z-10 pointer-events-none">
                 <div className="flex items-baseline gap-0.5">
-                  <span>{cageLabel.target}</span>
+                  <span className="cage-target">{cageLabel.target}</span>
                   {cageLabel.operator && (
-                    <span className="text-[9px] opacity-75">{cageLabel.operator}</span>
+                    <span className="cage-operator opacity-75">{cageLabel.operator}</span>
                   )}
                 </div>
               </div>
@@ -236,11 +234,10 @@ export default function PuzzleBoard({
               onChange={(e) => handleCellChange(row, col, e.target.value)}
               onFocus={() => handleCellFocus(row, col)}
               onKeyDown={(e) => handleKeyPress(e, row, col)}
-              className={`${cellStyle.base} text-[#1A1A1A] placeholder:text-gray-300`}
+              className={`${cellStyle.base} text-[#1A1A1A] placeholder:text-gray-300 puzzle-cell-input`}
               maxLength={1}
               style={{
                 fontFamily: "'Lora', Georgia, serif",
-                fontSize: '1.5rem',
               }}
             />
           </div>
