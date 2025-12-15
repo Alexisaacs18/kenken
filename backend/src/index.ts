@@ -34,6 +34,9 @@ function getDifficultyFromSize(size: number): string {
   return difficultyMap[size] || `Size${size}`;
 }
 
+// Export cron handler
+export { scheduled } from './cron';
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -46,7 +49,15 @@ export default {
     }
 
     // Route requests
-    if (path === '/api/generate' && method === 'POST') {
+    if (path.startsWith('/api/puzzle/') && method === 'GET') {
+      return handleGetPuzzle(request, env);
+    } else if (path.startsWith('/api/puzzle/') && method === 'PUT') {
+      return handleUpdatePuzzle(request, env);
+    } else if (path.startsWith('/api/puzzle/') && method === 'DELETE') {
+      return handleDeletePuzzle(request, env);
+    } else if (path.startsWith('/api/generate/') && method === 'POST') {
+      return handleGenerateBySize(request, env);
+    } else if (path === '/api/generate' && method === 'POST') {
       return handleGenerate(request, env);
     } else if (path === '/api/solve' && method === 'POST') {
       return handleSolve(request);
@@ -59,7 +70,7 @@ export default {
     } else if (path === '/' && method === 'GET') {
       return new Response(JSON.stringify({ 
         message: 'KenKen API is running', 
-        endpoints: ['/api/generate', '/api/solve', '/api/validate', '/api/health'] 
+        endpoints: ['/api/generate', '/api/solve', '/api/validate', '/api/health', '/api/puzzle/[key]', '/api/generate/[size]/[diff]'] 
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -341,5 +352,160 @@ function evaluateCage(cage: any, values: number[]): boolean {
       return (a / b === cage.target) || (b / a === cage.target);
     default:
       return false;
+  }
+}
+
+// GET /api/puzzle/[key] - Get first puzzle from cache and return usage count
+async function handleGetPuzzle(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const key = url.pathname.replace('/api/puzzle/', '');
+    
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: 'KV namespace not available' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const cached = await kv.get(key);
+    if (!cached) {
+      return new Response(
+        JSON.stringify({ puzzles: [], usageCount: 0 }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const puzzles = JSON.parse(cached) as any[];
+    const usageCount = puzzles.length > 0 ? 4 - puzzles.length : 4; // 1-3 = cache, 4+ = generated
+
+    return new Response(
+      JSON.stringify({ puzzles, usageCount }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Error getting puzzle:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+// PUT /api/puzzle/[key] - Update remaining puzzles array
+async function handleUpdatePuzzle(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const key = url.pathname.replace('/api/puzzle/', '');
+    const data = await request.json() as { puzzles: any[] };
+    
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: 'KV namespace not available' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Store updated puzzles array with 24h TTL
+    await kv.put(key, JSON.stringify(data.puzzles), { expirationTtl: 86400 });
+
+    return new Response(
+      JSON.stringify({ success: true, remaining: data.puzzles.length }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Error updating puzzle:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+// DELETE /api/puzzle/[key] - Clear empty cache
+async function handleDeletePuzzle(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const key = url.pathname.replace('/api/puzzle/', '');
+    
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: 'KV namespace not available' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    await kv.delete(key);
+
+    return new Response(
+      JSON.stringify({ success: true }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Error deleting puzzle:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+// POST /api/generate/[size]/[diff] - DB generation fallback
+async function handleGenerateBySize(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const pathParts = url.pathname.replace('/api/generate/', '').split('/');
+    const size = parseInt(pathParts[0]);
+    const difficulty = pathParts[1] || 'medium';
+
+    if (isNaN(size) || size < 3 || size > 9) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid size. Must be between 3 and 9.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Generate puzzle on-demand
+    const seed = `${Date.now()}-${size}-${difficulty}`;
+    const [puzzleSize, cliques] = generate(size, seed);
+    const solutionResult = solve(puzzleSize, cliques);
+
+    if (!solutionResult) {
+      return new Response(
+        JSON.stringify({ error: 'Failed to solve generated puzzle' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const cages = cliquesToCages(cliques);
+
+    // Convert to frontend format
+    const response = {
+      puzzle: {
+        size: puzzleSize,
+        cages,
+        solution: solutionResult.solution,
+      },
+      stats: {
+        algorithm: 'FC+MRV',
+        constraint_checks: solutionResult.checks,
+        assignments: solutionResult.assigns,
+        completion_time: solutionResult.time,
+      },
+      usageCount: 4, // Indicates this was generated on-demand
+    };
+
+    return new Response(JSON.stringify(response), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('Error generating puzzle by size:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 }

@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// .wrangler/tmp/bundle-c1thx8/strip-cf-connecting-ip-header.js
+// .wrangler/tmp/bundle-KhZlqC/strip-cf-connecting-ip-header.js
 function stripCfConnectingIPHeader(input, init) {
   const request = new Request(input, init);
   request.headers.delete("CF-Connecting-IP");
@@ -337,6 +337,95 @@ function cliquesToCages(cliques) {
 }
 __name(cliquesToCages, "cliquesToCages");
 
+// src/cron.ts
+function getSizeForDifficulty(difficulty) {
+  const difficultyMap = {
+    easy: [3, 4, 5],
+    medium: [5, 6, 7],
+    hard: [7, 8, 9]
+  };
+  return difficultyMap[difficulty] || [4];
+}
+__name(getSizeForDifficulty, "getSizeForDifficulty");
+async function generatePuzzle(size, difficulty, seed) {
+  try {
+    const [puzzleSize, cliques] = generate(size, seed);
+    const solutionResult = solve(puzzleSize, cliques);
+    if (!solutionResult) {
+      console.error(`Failed to solve ${size}x${size} ${difficulty} puzzle`);
+      return null;
+    }
+    const cages = cliquesToCages(cliques);
+    const operations = cliques.map(([, op]) => op);
+    return {
+      id: `${size}x${size}-${difficulty}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      size: puzzleSize,
+      difficulty,
+      grid: Array(size).fill(0).map(() => Array(size).fill(0)),
+      // Empty grid
+      cages,
+      operations,
+      solution: solutionResult.solution,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  } catch (error) {
+    console.error(`Error generating ${size}x${size} ${difficulty} puzzle:`, error);
+    return null;
+  }
+}
+__name(generatePuzzle, "generatePuzzle");
+async function preloadPuzzles(size, difficulty, date, kv, targetCount = 3) {
+  const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
+  const existing = await kv.get(key);
+  let puzzles = existing ? JSON.parse(existing) : [];
+  const needed = Math.max(0, targetCount - puzzles.length);
+  if (needed === 0) {
+    console.log(`Already have ${puzzles.length} puzzles for ${key}`);
+    return puzzles.length;
+  }
+  console.log(`Generating ${needed} puzzles for ${key}...`);
+  const newPuzzles = [];
+  for (let i = 0; i < needed; i++) {
+    const seed = `${date}-${size}-${difficulty}-${i}`;
+    const puzzle = await generatePuzzle(size, difficulty, seed);
+    if (puzzle) {
+      newPuzzles.push(puzzle);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  puzzles = [...puzzles, ...newPuzzles];
+  await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
+  console.log(`Stored ${puzzles.length} puzzles for ${key}`);
+  return puzzles.length;
+}
+__name(preloadPuzzles, "preloadPuzzles");
+async function scheduled(event, env, ctx) {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    console.error("No KV namespace available");
+    return;
+  }
+  const today = /* @__PURE__ */ new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const sizes = [3, 4, 5, 6, 7, 8, 9];
+  const difficulties = ["easy", "medium", "hard"];
+  console.log(`Starting daily puzzle preload for ${date}...`);
+  for (const difficulty of difficulties) {
+    const sizeRange = getSizeForDifficulty(difficulty);
+    for (const size of sizes) {
+      if (sizeRange.includes(size)) {
+        try {
+          await preloadPuzzles(size, difficulty, date, kv, 3);
+        } catch (error) {
+          console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
+        }
+      }
+    }
+  }
+  console.log(`Daily puzzle preload completed for ${date}`);
+}
+__name(scheduled, "scheduled");
+
 // src/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -364,7 +453,15 @@ var src_default = {
     if (method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
-    if (path === "/api/generate" && method === "POST") {
+    if (path.startsWith("/api/puzzle/") && method === "GET") {
+      return handleGetPuzzle(request, env);
+    } else if (path.startsWith("/api/puzzle/") && method === "PUT") {
+      return handleUpdatePuzzle(request, env);
+    } else if (path.startsWith("/api/puzzle/") && method === "DELETE") {
+      return handleDeletePuzzle(request, env);
+    } else if (path.startsWith("/api/generate/") && method === "POST") {
+      return handleGenerateBySize(request, env);
+    } else if (path === "/api/generate" && method === "POST") {
       return handleGenerate(request, env);
     } else if (path === "/api/solve" && method === "POST") {
       return handleSolve(request);
@@ -377,7 +474,7 @@ var src_default = {
     } else if (path === "/" && method === "GET") {
       return new Response(JSON.stringify({
         message: "KenKen API is running",
-        endpoints: ["/api/generate", "/api/solve", "/api/validate", "/api/health"]
+        endpoints: ["/api/generate", "/api/solve", "/api/validate", "/api/health", "/api/puzzle/[key]", "/api/generate/[size]/[diff]"]
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
@@ -619,6 +716,139 @@ function evaluateCage(cage, values) {
   }
 }
 __name(evaluateCage, "evaluateCage");
+async function handleGetPuzzle(request, env) {
+  try {
+    const url = new URL(request.url);
+    const key = url.pathname.replace("/api/puzzle/", "");
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: "KV namespace not available" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const cached = await kv.get(key);
+    if (!cached) {
+      return new Response(
+        JSON.stringify({ puzzles: [], usageCount: 0 }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const puzzles = JSON.parse(cached);
+    const usageCount = puzzles.length > 0 ? 4 - puzzles.length : 4;
+    return new Response(
+      JSON.stringify({ puzzles, usageCount }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error getting puzzle:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+}
+__name(handleGetPuzzle, "handleGetPuzzle");
+async function handleUpdatePuzzle(request, env) {
+  try {
+    const url = new URL(request.url);
+    const key = url.pathname.replace("/api/puzzle/", "");
+    const data = await request.json();
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: "KV namespace not available" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    await kv.put(key, JSON.stringify(data.puzzles), { expirationTtl: 86400 });
+    return new Response(
+      JSON.stringify({ success: true, remaining: data.puzzles.length }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error updating puzzle:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+}
+__name(handleUpdatePuzzle, "handleUpdatePuzzle");
+async function handleDeletePuzzle(request, env) {
+  try {
+    const url = new URL(request.url);
+    const key = url.pathname.replace("/api/puzzle/", "");
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: "KV namespace not available" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    await kv.delete(key);
+    return new Response(
+      JSON.stringify({ success: true }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error deleting puzzle:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+}
+__name(handleDeletePuzzle, "handleDeletePuzzle");
+async function handleGenerateBySize(request, env) {
+  try {
+    const url = new URL(request.url);
+    const pathParts = url.pathname.replace("/api/generate/", "").split("/");
+    const size = parseInt(pathParts[0]);
+    const difficulty = pathParts[1] || "medium";
+    if (isNaN(size) || size < 3 || size > 9) {
+      return new Response(
+        JSON.stringify({ error: "Invalid size. Must be between 3 and 9." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const seed = `${Date.now()}-${size}-${difficulty}`;
+    const [puzzleSize, cliques] = generate(size, seed);
+    const solutionResult = solve(puzzleSize, cliques);
+    if (!solutionResult) {
+      return new Response(
+        JSON.stringify({ error: "Failed to solve generated puzzle" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const cages = cliquesToCages(cliques);
+    const response = {
+      puzzle: {
+        size: puzzleSize,
+        cages,
+        solution: solutionResult.solution
+      },
+      stats: {
+        algorithm: "FC+MRV",
+        constraint_checks: solutionResult.checks,
+        assignments: solutionResult.assigns,
+        completion_time: solutionResult.time
+      },
+      usageCount: 4
+      // Indicates this was generated on-demand
+    };
+    return new Response(JSON.stringify(response), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  } catch (error) {
+    console.error("Error generating puzzle by size:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+}
+__name(handleGenerateBySize, "handleGenerateBySize");
 
 // node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts
 var drainBody = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx) => {
@@ -661,7 +891,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-c1thx8/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-KhZlqC/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -693,7 +923,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-c1thx8/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-KhZlqC/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;
@@ -789,6 +1019,7 @@ if (typeof middleware_insertion_facade_default === "object") {
 var middleware_loader_entry_default = WRAPPED_ENTRY;
 export {
   __INTERNAL_WRANGLER_MIDDLEWARE__,
-  middleware_loader_entry_default as default
+  middleware_loader_entry_default as default,
+  scheduled
 };
 //# sourceMappingURL=index.js.map

@@ -129,3 +129,100 @@ export async function validateBoard(
 
   return response.json();
 }
+
+// Daily puzzle cache API
+export interface DailyPuzzleResponse {
+  puzzles: any[];
+  usageCount: number;
+}
+
+export interface DailyPuzzleData {
+  id: string;
+  size: number;
+  difficulty: string;
+  grid: number[][];
+  cages: Array<{
+    cells: [number, number][];
+    operator: string;
+    target: number;
+  }>;
+  operations: string[];
+  solution: number[][];
+  generatedAt: string;
+}
+
+/**
+ * Get puzzle from daily cache
+ */
+export async function getDailyPuzzle(key: string): Promise<DailyPuzzleResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/puzzle/${encodeURIComponent(key)}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get daily puzzle: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Update remaining puzzles in cache
+ */
+export async function updateDailyPuzzleCache(key: string, puzzles: DailyPuzzleData[]): Promise<{ success: boolean; remaining: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/puzzle/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ puzzles }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update puzzle cache: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete empty puzzle cache
+ */
+export async function deleteDailyPuzzleCache(key: string): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/puzzle/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete puzzle cache: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Generate puzzle on-demand (fallback when cache is empty)
+ */
+export async function generatePuzzleBySize(
+  size: number,
+  difficulty: string
+): Promise<GeneratePuzzleResponse & { usageCount: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/generate/${size}/${difficulty}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to generate puzzle: ${response.statusText}`);
+  }
+
+  return response.json();
+}
