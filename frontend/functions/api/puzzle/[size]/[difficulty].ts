@@ -8,7 +8,7 @@
  * - Generated puzzles are NOT added back to the 3-per-day cache
  */
 
-import { generate, solve, cliquesToCages } from 'api/kenken';
+import { generate, solve, cliquesToCages } from './kenken';
 
 interface Env {
   PUZZLES_KV: KVNamespace;
