@@ -7,7 +7,7 @@ compatibility_date = "2025-12-14"
 
 # Cron trigger for daily puzzle preloading (runs at 00:05 UTC daily)
 [triggers]
-crons = ["5 0 * * *"]
+crons = ["* * * * *"]
 
 # KV namespace for job queue and sessions
 [[kv_namespaces]]
