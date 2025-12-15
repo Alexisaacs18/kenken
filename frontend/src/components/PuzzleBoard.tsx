@@ -204,15 +204,17 @@ export default function PuzzleBoard({
     return null;
   };
 
-  // Responsive grid - uses CSS Grid with 1fr for flexible sizing
+  // Fixed cell size based on 9x9 grid - ensures all puzzles use same cell size
+  // Cell size is calculated as if it's always a 9x9 grid, then we use that size for all puzzles
+  const baseGridSize = 9;
+  
   return (
     <div
       className="puzzle-grid mx-auto bg-white rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
       style={{
-        gridTemplateColumns: `repeat(${size}, 1fr)`,
-        aspectRatio: '1 / 1',
-        maxWidth: 'min(95vw, 600px)',
-        width: '100%',
+        gridTemplateColumns: `repeat(${size}, calc(min(95vw, 600px) / ${baseGridSize}))`,
+        gridTemplateRows: `repeat(${size}, calc(min(95vw, 600px) / ${baseGridSize}))`,
+        width: `calc(min(95vw, 600px) / ${baseGridSize} * ${size})`,
       }}
     >
       {Array.from({ length: size * size }, (_, i) => {
