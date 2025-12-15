@@ -1,15 +1,6 @@
 # backend/wrangler.toml
-# Configuration for the API Gateway Worker (TypeScript)
+# Configuration for the KenKen API Worker (TypeScript)
 
-name = "kenken"        # Name of your API Worker
-main = "src/index.ts"         # Entry point - adjust path if your TypeScript code is elsewhere
-compatibility_date = "2025-12-14"  # Use today's date or a recent one
-
-# Service Binding to Python Algorithm Worker (if you create one)
-# Uncomment and configure when you create the Python Worker:
-# [[services]]
-# binding = "SCORING_ENGINE"         # Variable name in TypeScript code (env.SCORING_ENGINE)
-# service = "ai-scoring-python"      # Name of the Python Worker
-
-# Note: If your main TypeScript file is in the root (not src/), change main to "index.ts"
-# Note: If you're using the Python Flask backend (api.py), this Worker config is for a future TypeScript migration
+name = "kenken"
+main = "src/index.ts"
+compatibility_date = "2025-12-14"

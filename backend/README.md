@@ -1,15 +1,21 @@
 # KenKen Backend API
 
-Flask API wrapper for the KenKen puzzle generator and solver.
+Cloudflare Worker (TypeScript) for the KenKen puzzle generator and solver.
 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-python api.py
+npm install
+npx wrangler dev
 ```
 
-The API will run on `http://localhost:5000`
+The API will run on the local development server (typically `http://localhost:8787`)
+
+## Deployment
+
+```bash
+npx wrangler deploy
+```
 
 ## API Endpoints
 

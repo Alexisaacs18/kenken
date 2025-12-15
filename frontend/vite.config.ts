@@ -15,7 +15,7 @@ export default defineConfig({
     // Proxy to Cloudflare Pages Functions in production, or local backend in dev
     proxy: process.env.NODE_ENV === 'production' ? undefined : {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'http://localhost:8787',
         changeOrigin: true,
       },
     },

@@ -34,6 +34,13 @@ export default {
       return new Response(JSON.stringify({ status: 'ok', message: 'API Worker is running' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    } else if (path === '/' && method === 'GET') {
+      return new Response(JSON.stringify({ 
+        message: 'KenKen API is running', 
+        endpoints: ['/api/generate', '/api/solve', '/api/validate', '/api/health'] 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // 404 for unknown routes
