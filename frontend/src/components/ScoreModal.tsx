@@ -1,4 +1,8 @@
+import { useState } from 'react';
 import { formatTime } from '../utils/puzzleUtils';
+import type { Puzzle } from '../types';
+import ShareModal from './ShareModal';
+import { generateShareText, type ShareData, handleShare } from '../utils/share';
 
 interface ScoreModalProps {
   isOpen: boolean;
@@ -8,6 +12,13 @@ interface ScoreModalProps {
   movesMade: number;
   hintsUsed: number;
   checksUsed: number;
+  puzzle: Puzzle | null;
+  board: number[][];
+  isDailyPuzzle: boolean;
+  dateLabel: string;
+  difficultyLabel: string;
+  streak?: number;
+  puzzleNumber?: number;
 }
 
 export default function ScoreModal({
@@ -18,8 +29,61 @@ export default function ScoreModal({
   movesMade,
   hintsUsed,
   checksUsed,
+  puzzle,
+  board,
+  isDailyPuzzle,
+  dateLabel,
+  difficultyLabel,
+  streak,
+  puzzleNumber,
 }: ScoreModalProps) {
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareText, setShareText] = useState('');
+
   if (!isOpen) return null;
+
+  const buildShareData = (): ShareData | null => {
+    if (!puzzle || !board || board.length === 0) return null;
+
+    const size = puzzle.size;
+    const gridStatus: boolean[][] = Array.from({ length: size }, (_, r) =>
+      Array.from({ length: size }, (_, c) => {
+        const val = board[r]?.[c];
+        if (!val || !puzzle.solution) {
+          return false; // missing or unknown
+        }
+        return puzzle.solution[r][c] === val;
+      }),
+    );
+
+    const completionTime = formatTime(timeElapsed);
+    const shareData: ShareData = {
+      puzzleNumber: puzzleNumber ?? 0,
+      date: dateLabel,
+      difficulty: difficultyLabel,
+      size: `${size}x${size}`,
+      completionTime,
+      streak,
+      gridStatus,
+    };
+
+    return shareData;
+  };
+
+  const onShareClick = async () => {
+    const data = buildShareData();
+    if (!data) return;
+
+    const text = generateShareText(data);
+
+    try {
+      await handleShare(data);
+    } catch {
+      // Web Share API not available or failed – show custom modal fallback
+      setShareText(text);
+      setShowShareModal(true);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -55,14 +119,30 @@ export default function ScoreModal({
           </div>
         </div>
 
-        <button
-          onClick={onClose}
-          className="w-full px-4 py-3 text-sm font-medium bg-[#1A1A1A] text-white border border-[#1A1A1A] rounded-sm hover:bg-[#333333] transition-colors"
-          style={{ fontFamily: "'Lora', Georgia, serif" }}
-        >
-          Close
-        </button>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            onClick={onShareClick}
+            className="w-full sm:w-1/2 px-4 py-3 text-sm font-semibold text-white rounded-sm bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 transition-colors flex items-center justify-center gap-2"
+            style={{ fontFamily: "'Lora', Georgia, serif" }}
+          >
+            <span>Share</span>
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full sm:w-1/2 px-4 py-3 text-sm font-medium bg-[#1A1A1A] text-white border border-[#1A1A1A] rounded-sm hover:bg-[#333333] transition-colors"
+            style={{ fontFamily: "'Lora', Georgia, serif" }}
+          >
+            Close
+          </button>
+        </div>
       </div>
+
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        shareText={shareText}
+      />
     </div>
   );
 }
+

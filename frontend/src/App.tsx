@@ -380,6 +380,36 @@ function App() {
     return checksUsed;
   };
 
+  const getShareDateLabel = () => {
+    if (isDailyPuzzle) {
+      return dailyPuzzleInfo.date;
+    }
+    // For practice, just use today's date in YYYY-MM-DD
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const getDifficultyLabel = () => {
+    if (isDailyPuzzle) {
+      return dailyPuzzleInfo.difficulty;
+    }
+    if (puzzle) {
+      return `${puzzle.size}x${puzzle.size} Practice`;
+    }
+    return 'Practice';
+  };
+
+  const getPuzzleNumber = () => {
+    if (!isDailyPuzzle) return 0;
+    const base = new Date('2024-01-01T00:00:00Z');
+    const current = new Date(`${dailyPuzzleInfo.date}T00:00:00Z`);
+    const diffDays = Math.floor((current.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays + 1;
+  };
+
   // Persist current sessions to storage whenever relevant state changes
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -572,6 +602,12 @@ function App() {
         movesMade={gameStats.movesMade}
         hintsUsed={gameStats.hintsUsed}
         checksUsed={checksUsed}
+        puzzle={puzzle}
+        board={board}
+        isDailyPuzzle={isDailyPuzzle}
+        dateLabel={getShareDateLabel()}
+        difficultyLabel={getDifficultyLabel()}
+        puzzleNumber={getPuzzleNumber()}
       />
 
       {/* Tutorial Modal */}
