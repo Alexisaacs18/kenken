@@ -44,7 +44,17 @@ export interface ValidateResponse {
 }
 
 /**
+ * Map size to difficulty for the new endpoint format
+ */
+function getDifficultyFromSize(size: number): string {
+  if (size <= 4) return 'easy';
+  if (size <= 6) return 'medium';
+  return 'hard';
+}
+
+/**
  * Generate a new KenKen puzzle
+ * Now uses the new /api/generate/[size]/[difficulty] endpoint
  */
 export async function generatePuzzle(
   size: number,
@@ -52,17 +62,14 @@ export async function generatePuzzle(
   seed?: string
 ): Promise<GeneratePuzzleResponse> {
   try {
-    const body: GeneratePuzzleRequest = { size, algorithm };
-    if (seed) {
-      body.seed = seed;
-    }
-    
-    const response = await fetch(`${API_BASE_URL}/api/generate`, {
+    // Use the new endpoint format with size and difficulty
+    const difficulty = getDifficultyFromSize(size);
+    const response = await fetch(`${API_BASE_URL}/api/generate/${size}/${difficulty}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      // Note: seed is ignored for now, but endpoint may support it in the future
     });
 
     if (!response.ok) {
@@ -77,7 +84,13 @@ export async function generatePuzzle(
       throw new Error(errorMessage);
     }
 
-    return response.json();
+    const data = await response.json();
+    // The new endpoint returns { puzzle, stats, usageCount }
+    // Map it to the expected format
+    return {
+      puzzle: data.puzzle,
+      stats: data.stats,
+    };
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error(`Cannot connect to backend at ${API_BASE_URL}. Make sure the backend is running.`);

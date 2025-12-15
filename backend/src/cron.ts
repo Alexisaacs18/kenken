@@ -68,6 +68,7 @@ async function generatePuzzle(size: number, difficulty: string, seed?: string): 
 }
 
 // Preload puzzles for a specific size/difficulty combo
+// Ensures exactly 3 puzzles per day (reads existing, generates missing, stores exactly 3)
 async function preloadPuzzles(
   size: number,
   difficulty: string,
@@ -81,32 +82,40 @@ async function preloadPuzzles(
   const existing = await kv.get(key);
   let puzzles: PuzzleData[] = existing ? JSON.parse(existing) : [];
   
-  const needed = Math.max(0, targetCount - puzzles.length);
-  if (needed === 0) {
-    console.log(`Already have ${puzzles.length} puzzles for ${key}`);
+  // Ensure we have exactly targetCount puzzles (not more, not less)
+  // If we have more than targetCount, trim to targetCount
+  // If we have fewer, generate the missing ones
+  if (puzzles.length >= targetCount) {
+    // Trim to exactly targetCount (in case of stale data)
+    puzzles = puzzles.slice(0, targetCount);
+    await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
+    console.log(`Already have ${puzzles.length} puzzles for ${key} (trimmed to ${targetCount})`);
     return puzzles.length;
   }
 
-  console.log(`Generating ${needed} puzzles for ${key}...`);
+  const needed = targetCount - puzzles.length;
+  console.log(`Generating ${needed} puzzles for ${key} (have ${puzzles.length}, need ${targetCount})...`);
   const newPuzzles: PuzzleData[] = [];
 
   for (let i = 0; i < needed; i++) {
-    const seed = `${date}-${size}-${difficulty}-${i}`;
+    const seed = `${date}-${size}-${difficulty}-${puzzles.length + i}`;
     const puzzle = await generatePuzzle(size, difficulty, seed);
     if (puzzle) {
       newPuzzles.push(puzzle);
+    } else {
+      console.error(`Failed to generate puzzle ${i + 1}/${needed} for ${key}`);
     }
     // Small delay to avoid overwhelming the system
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 
-  // Combine with existing puzzles
-  puzzles = [...puzzles, ...newPuzzles];
+  // Combine with existing puzzles (ensures exactly targetCount)
+  puzzles = [...puzzles, ...newPuzzles].slice(0, targetCount);
 
   // Store in KV with 24h TTL (86400 seconds)
   await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
 
-  console.log(`Stored ${puzzles.length} puzzles for ${key}`);
+  console.log(`Stored exactly ${puzzles.length} puzzles for ${key}`);
   return puzzles.length;
 }
 
@@ -118,26 +127,26 @@ export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionC
       return;
     }
 
+    // Use UTC date to match the 00:05 UTC cron schedule
     const today = new Date();
-    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const utcYear = today.getUTCFullYear();
+    const utcMonth = String(today.getUTCMonth() + 1).padStart(2, '0');
+    const utcDay = String(today.getUTCDate()).padStart(2, '0');
+    const date = `${utcYear}-${utcMonth}-${utcDay}`;
 
     const sizes = [3, 4, 5, 6, 7, 8, 9];
     const difficulties = ['easy', 'medium', 'hard'];
 
     console.log(`Starting daily puzzle preload for ${date}...`);
 
-    // Generate puzzles for each size/difficulty combo
-    for (const difficulty of difficulties) {
-      const sizeRange = getSizeForDifficulty(difficulty);
-      
-      for (const size of sizes) {
-        // Only generate if size is in the difficulty's range
-        if (sizeRange.includes(size)) {
-          try {
-            await preloadPuzzles(size, difficulty, date, kv, 3);
-          } catch (error) {
-            console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
-          }
+    // Generate puzzles for EACH size and EACH difficulty combo
+    // This ensures 3 puzzles per size/difficulty (e.g., 3x3 easy, 3x3 medium, 3x3 hard, etc.)
+    for (const size of sizes) {
+      for (const difficulty of difficulties) {
+        try {
+          await preloadPuzzles(size, difficulty, date, kv, 3);
+        } catch (error) {
+          console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
         }
       }
     }

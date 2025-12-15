@@ -468,7 +468,58 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
       );
     }
 
-    // Generate puzzle on-demand
+    // TRY CACHE FIRST even in generate fallback
+    // Use UTC date to match cron job key format
+    const today = new Date();
+    const utcYear = today.getUTCFullYear();
+    const utcMonth = String(today.getUTCMonth() + 1).padStart(2, '0');
+    const utcDay = String(today.getUTCDate()).padStart(2, '0');
+    const date = `${utcYear}-${utcMonth}-${utcDay}`;
+    const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
+    
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (kv) {
+      const cached = await kv.get(key);
+      if (cached) {
+        const puzzles = JSON.parse(cached) as any[];
+        if (puzzles && puzzles.length > 0) {
+          // Return first puzzle from cache
+          const firstPuzzle = puzzles[0];
+          const cages = firstPuzzle.cages;
+          
+          return new Response(JSON.stringify({
+            puzzle: {
+              size: firstPuzzle.size,
+              cages,
+              solution: firstPuzzle.solution,
+            },
+            stats: {
+              algorithm: 'cached',
+              constraint_checks: 0,
+              assignments: 0,
+              completion_time: 0,
+            },
+            usageCount: 4 - puzzles.length, // 1-3 = cache
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+    }
+
+    // If cache is empty, allow generation for now (until cron populates cache)
+    // Large puzzles (7x7+) will be slow but will work
+    // TODO: Once cron is running reliably, we can re-enable the block below
+    // if (size > 6) {
+    //   return new Response(
+    //     JSON.stringify({ 
+    //       error: `${size}x${size} puzzle generation disabled - please use preloaded cache. Cache may be empty if cron job hasn't run yet.` 
+    //     }),
+    //     { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    //   );
+    // }
+
+    // Generate puzzle on-demand (only for small puzzles)
     const seed = `${Date.now()}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);

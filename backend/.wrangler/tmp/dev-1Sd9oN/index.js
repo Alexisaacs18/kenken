@@ -338,15 +338,6 @@ function cliquesToCages(cliques) {
 __name(cliquesToCages, "cliquesToCages");
 
 // src/cron.ts
-function getSizeForDifficulty(difficulty) {
-  const difficultyMap = {
-    easy: [3, 4, 5],
-    medium: [5, 6, 7],
-    hard: [7, 8, 9]
-  };
-  return difficultyMap[difficulty] || [4];
-}
-__name(getSizeForDifficulty, "getSizeForDifficulty");
 async function generatePuzzle(size, difficulty, seed) {
   try {
     const [puzzleSize, cliques] = generate(size, seed);
@@ -378,24 +369,28 @@ async function preloadPuzzles(size, difficulty, date, kv, targetCount = 3) {
   const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
   const existing = await kv.get(key);
   let puzzles = existing ? JSON.parse(existing) : [];
-  const needed = Math.max(0, targetCount - puzzles.length);
-  if (needed === 0) {
-    console.log(`Already have ${puzzles.length} puzzles for ${key}`);
+  if (puzzles.length >= targetCount) {
+    puzzles = puzzles.slice(0, targetCount);
+    await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
+    console.log(`Already have ${puzzles.length} puzzles for ${key} (trimmed to ${targetCount})`);
     return puzzles.length;
   }
-  console.log(`Generating ${needed} puzzles for ${key}...`);
+  const needed = targetCount - puzzles.length;
+  console.log(`Generating ${needed} puzzles for ${key} (have ${puzzles.length}, need ${targetCount})...`);
   const newPuzzles = [];
   for (let i = 0; i < needed; i++) {
-    const seed = `${date}-${size}-${difficulty}-${i}`;
+    const seed = `${date}-${size}-${difficulty}-${puzzles.length + i}`;
     const puzzle = await generatePuzzle(size, difficulty, seed);
     if (puzzle) {
       newPuzzles.push(puzzle);
+    } else {
+      console.error(`Failed to generate puzzle ${i + 1}/${needed} for ${key}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  puzzles = [...puzzles, ...newPuzzles];
+  puzzles = [...puzzles, ...newPuzzles].slice(0, targetCount);
   await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
-  console.log(`Stored ${puzzles.length} puzzles for ${key}`);
+  console.log(`Stored exactly ${puzzles.length} puzzles for ${key}`);
   return puzzles.length;
 }
 __name(preloadPuzzles, "preloadPuzzles");
@@ -406,19 +401,19 @@ async function scheduled(event, env, ctx) {
     return;
   }
   const today = /* @__PURE__ */ new Date();
-  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const utcYear = today.getUTCFullYear();
+  const utcMonth = String(today.getUTCMonth() + 1).padStart(2, "0");
+  const utcDay = String(today.getUTCDate()).padStart(2, "0");
+  const date = `${utcYear}-${utcMonth}-${utcDay}`;
   const sizes = [3, 4, 5, 6, 7, 8, 9];
   const difficulties = ["easy", "medium", "hard"];
   console.log(`Starting daily puzzle preload for ${date}...`);
-  for (const difficulty of difficulties) {
-    const sizeRange = getSizeForDifficulty(difficulty);
-    for (const size of sizes) {
-      if (sizeRange.includes(size)) {
-        try {
-          await preloadPuzzles(size, difficulty, date, kv, 3);
-        } catch (error) {
-          console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
-        }
+  for (const size of sizes) {
+    for (const difficulty of difficulties) {
+      try {
+        await preloadPuzzles(size, difficulty, date, kv, 3);
+      } catch (error) {
+        console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
       }
     }
   }
@@ -810,6 +805,45 @@ async function handleGenerateBySize(request, env) {
       return new Response(
         JSON.stringify({ error: "Invalid size. Must be between 3 and 9." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const today = /* @__PURE__ */ new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (kv) {
+      const cached = await kv.get(key);
+      if (cached) {
+        const puzzles = JSON.parse(cached);
+        if (puzzles && puzzles.length > 0) {
+          const firstPuzzle = puzzles[0];
+          const cages2 = firstPuzzle.cages;
+          return new Response(JSON.stringify({
+            puzzle: {
+              size: firstPuzzle.size,
+              cages: cages2,
+              solution: firstPuzzle.solution
+            },
+            stats: {
+              algorithm: "cached",
+              constraint_checks: 0,
+              assignments: 0,
+              completion_time: 0
+            },
+            usageCount: 4 - puzzles.length
+            // 1-3 = cache
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+      }
+    }
+    if (size > 6) {
+      return new Response(
+        JSON.stringify({
+          error: `${size}x${size} puzzle generation disabled - please use preloaded cache. Cache may be empty if cron job hasn't run yet.`
+        }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
     const seed = `${Date.now()}-${size}-${difficulty}`;
