@@ -31,6 +31,7 @@ function App() {
   const [history, setHistory] = useState<number[][][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [solved, setSolved] = useState(false);
+  const [lost, setLost] = useState(false);
   const [hintHighlight, setHintHighlight] = useState<[number, number] | null>(null);
   const [checkHighlights, setCheckHighlights] = useState<Map<string, 'correct' | 'incorrect'>>(new Map());
   const [showTutorial, setShowTutorial] = useState(false);
@@ -282,7 +283,7 @@ function App() {
 
   // Handle cell change
   const handleCellChange = (row: number, col: number, value: number) => {
-    if (!puzzle) return;
+    if (!puzzle || lost) return;
 
     const newBoard = board.map((r, rIdx) =>
       rIdx === row
@@ -305,7 +306,7 @@ function App() {
 
   // Handle hint (limited to 3 uses)
   const handleHint = () => {
-    if (!puzzle || !puzzle.solution || hintsRemaining === 0) return;
+    if (!puzzle || !puzzle.solution || hintsRemaining === 0 || lost) return;
 
     // Find first empty cell and fill with solution
     for (let row = 0; row < puzzle.size; row++) {
@@ -328,9 +329,9 @@ function App() {
     }
   };
 
-  // Handle check (limited to 3 uses)
-  const handleCheck = async () => {
-    if (!puzzle || checksRemaining === 0) return;
+  // Run a check (limited to 3 uses). When autoCheck is true, it's triggered by a full-but-wrong board.
+  const runCheck = async (autoCheck: boolean) => {
+    if (!puzzle || checksRemaining === 0 || lost) return;
 
     try {
       const response = await validateBoard(puzzle, board);
@@ -362,7 +363,7 @@ function App() {
       
       setCheckHighlights(highlights);
       
-      // Remove highlights after 3 seconds
+      // Remove highlights after 3 seconds (unless player has lost, in which case loss highlights will override)
       setTimeout(() => {
         setCheckHighlights(new Map());
       }, 3000);
@@ -372,12 +373,15 @@ function App() {
         if (isPuzzleSolved(puzzle, board)) {
           setSolved(true);
         }
-        // No alert - visual feedback only
       }
-      // No alert for errors - visual feedback only
     } catch (error) {
       console.error('Error validating puzzle:', error);
     }
+  };
+
+  // Manual check button handler
+  const handleCheck = async () => {
+    await runCheck(false);
   };
 
   // Handle undo
@@ -392,7 +396,7 @@ function App() {
 
   // Handle number pad delete
   const handleNumberPadDelete = () => {
-    if (!selectedCell || !puzzle) return;
+    if (!selectedCell || !puzzle || lost) return;
     const [row, col] = selectedCell;
     handleCellChange(row, col, 0);
   };
@@ -431,6 +435,45 @@ function App() {
     const diffDays = Math.floor((current.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
     return diffDays + 1;
   };
+
+  // Auto-check when board is completely filled but incorrect (uses one check)
+  useEffect(() => {
+    if (!puzzle || solved || lost) return;
+
+    const isFull = board.length === puzzle.size &&
+      board.every((row) => row.length === puzzle.size && row.every((v) => v > 0));
+
+    if (!isFull) return;
+
+    // If board is full but not solved, and we have checks left, auto-run a check
+    if (!isPuzzleSolved(puzzle, board) && checksRemaining > 0) {
+      void runCheck(true);
+    }
+  }, [board, puzzle, solved, lost, checksRemaining]);
+
+  // Detect loss: all hints and checks exhausted without solving
+  useEffect(() => {
+    if (!puzzle || solved || lost) return;
+    if (hintsRemaining === 0 && checksRemaining === 0) {
+      // Mark game as lost and highlight all incorrect/missing cells in red
+      setLost(true);
+
+      if (puzzle.solution) {
+        const highlights = new Map<string, 'correct' | 'incorrect'>();
+        for (let row = 0; row < puzzle.size; row++) {
+          for (let col = 0; col < puzzle.size; col++) {
+            const val = board[row]?.[col];
+            const correct = puzzle.solution[row][col];
+            if (!val || val !== correct) {
+              const cellKey = `${row},${col}`;
+              highlights.set(cellKey, 'incorrect');
+            }
+          }
+        }
+        setCheckHighlights(highlights);
+      }
+    }
+  }, [puzzle, board, solved, lost, hintsRemaining, checksRemaining]);
 
   // Persist current sessions to storage whenever relevant state changes
   useEffect(() => {
