@@ -19,6 +19,7 @@ interface ScoreModalProps {
   difficultyLabel: string;
   streak?: number;
   puzzleNumber?: number;
+  lost?: boolean; // Whether the game was lost (ran out of hints/checks)
 }
 
 export default function ScoreModal({
@@ -36,6 +37,7 @@ export default function ScoreModal({
   difficultyLabel,
   streak,
   puzzleNumber,
+  lost = false,
 }: ScoreModalProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareText, setShareText] = useState('');
@@ -90,14 +92,23 @@ export default function ScoreModal({
       <div className="bg-white rounded-sm shadow-2xl max-w-md w-full p-8 border border-[#E0E0E0]">
         <div className="text-center mb-6">
           <h2 className="text-3xl font-semibold text-[#1A1A1A] mb-2" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-            Puzzle Solved!
+            {lost ? 'Out of Hints & Checks!' : 'Puzzle Solved!'}
           </h2>
-          <div className="text-4xl font-bold text-[#1A1A1A] mb-4" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-            Score: {score}
-          </div>
-          <p className="text-sm text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-            Lower is better
-          </p>
+          {!lost && (
+            <>
+              <div className="text-4xl font-bold text-[#1A1A1A] mb-4" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                Score: {score}
+              </div>
+              <p className="text-sm text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+                Lower is better
+              </p>
+            </>
+          )}
+          {lost && (
+            <p className="text-sm text-[#666666] mb-4" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+              You ran out of hints and checks. Share your progress and try again!
+            </p>
+          )}
         </div>
 
         <div className="space-y-3 mb-6 text-sm">

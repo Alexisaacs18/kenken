@@ -66,20 +66,23 @@ function App() {
 
   // Check if puzzle is solved
   useEffect(() => {
-    if (puzzle && board.length > 0 && !solved) {
-      const isComplete = isPuzzleSolved(puzzle, board);
-      if (isComplete) {
-        setSolved(true);
-        if (isDailyPuzzle) {
-          markPuzzleCompletedToday();
-        }
-        // Show score modal after a brief delay
-        setTimeout(() => {
-          setShowScoreModal(true);
-        }, 500);
+    // Don't check if loading, lost, or already solved
+    // Also ensure board is properly initialized (matches puzzle size)
+    if (!puzzle || loading || lost || solved || board.length === 0) return;
+    if (board.length !== puzzle.size || board[0]?.length !== puzzle.size) return;
+    
+    const isComplete = isPuzzleSolved(puzzle, board);
+    if (isComplete) {
+      setSolved(true);
+      if (isDailyPuzzle) {
+        markPuzzleCompletedToday();
       }
+      // Show score modal after a brief delay
+      setTimeout(() => {
+        setShowScoreModal(true);
+      }, 500);
     }
-  }, [puzzle, board, solved, showScoreModal, isDailyPuzzle]);
+  }, [puzzle, board, solved, showScoreModal, isDailyPuzzle, loading, lost]);
 
   // Save to history
   const saveToHistory = useCallback((newBoard: number[][]) => {
@@ -95,6 +98,14 @@ function App() {
     setDailyPuzzleInfo(todayInfo);
     setIsDailyPuzzle(true);
     setSelectedDifficulty(null);
+    // Reset all game state BEFORE loading new puzzle
+    setSolved(false);
+    setLost(false);
+    setShowScoreModal(false);
+    setCheckHighlights(new Map());
+    setErrors([]);
+    setHintHighlight(null);
+    setSelectedCell(null); // Reset selected cell
     setLoading(true);
     
     try {
@@ -171,13 +182,23 @@ function App() {
   const handleDifficultySelect = async (size: number) => {
     setSelectedDifficulty(size);
     setIsDailyPuzzle(false); // This is practice mode, not daily puzzle
+    // Reset all game state BEFORE loading new puzzle
+    setSolved(false);
+    setLost(false);
+    setShowScoreModal(false);
+    setCheckHighlights(new Map());
+    setErrors([]);
+    setHintHighlight(null);
+    setSelectedCell(null); // Reset selected cell
     setLoading(true);
     
     try {
       // Always generate a fresh practice puzzle for this difficulty
       const response = await generatePuzzle(size, algorithm); // No seed for practice mode
-      setPuzzle(response.puzzle);
       const newBoard = initializeBoard(response.puzzle.size);
+      
+      // Set all state together to avoid race conditions
+      setPuzzle(response.puzzle);
       setBoard(newBoard);
       setGameStats({
         timeElapsed: 0,
@@ -190,9 +211,9 @@ function App() {
       setChecksRemaining(3);
       setHistory([JSON.parse(JSON.stringify(newBoard))]);
       setHistoryIndex(0);
-      setSolved(false);
-      setErrors([]);
       setShowSideMenu(false);
+      // Ensure solved is false after puzzle loads
+      setSolved(false);
     } catch (error) {
       console.error('Error generating puzzle:', error);
       const errorMessage = error instanceof Error 
@@ -201,6 +222,7 @@ function App() {
       alert(errorMessage);
       setSelectedDifficulty(null);
     } finally {
+      // Reset loading state last to ensure all state is set
       setLoading(false);
     }
   };
@@ -283,7 +305,7 @@ function App() {
 
   // Handle cell change
   const handleCellChange = (row: number, col: number, value: number) => {
-    if (!puzzle || lost) return;
+    if (!puzzle || lost || loading || solved) return;
 
     const newBoard = board.map((r, rIdx) =>
       rIdx === row
@@ -299,14 +321,14 @@ function App() {
 
   // Handle number pad input
   const handleNumberPadClick = (num: number) => {
-    if (!selectedCell || !puzzle) return;
+    if (!selectedCell || !puzzle || loading) return;
     const [row, col] = selectedCell;
     handleCellChange(row, col, num);
   };
 
   // Handle hint (limited to 3 uses)
   const handleHint = () => {
-    if (!puzzle || !puzzle.solution || hintsRemaining === 0 || lost) return;
+    if (!puzzle || !puzzle.solution || hintsRemaining === 0 || lost || loading) return;
 
     // Find first empty cell and fill with solution
     for (let row = 0; row < puzzle.size; row++) {
@@ -331,7 +353,7 @@ function App() {
 
   // Run a check (limited to 3 uses). When autoCheck is true, it's triggered by a full-but-wrong board.
   const runCheck = async (autoCheck: boolean) => {
-    if (!puzzle || checksRemaining === 0 || lost) return;
+    if (!puzzle || checksRemaining === 0 || lost || loading) return;
 
     try {
       const response = await validateBoard(puzzle, board);
@@ -396,7 +418,7 @@ function App() {
 
   // Handle number pad delete
   const handleNumberPadDelete = () => {
-    if (!selectedCell || !puzzle || lost) return;
+    if (!selectedCell || !puzzle || lost || loading) return;
     const [row, col] = selectedCell;
     handleCellChange(row, col, 0);
   };
@@ -472,6 +494,11 @@ function App() {
         }
         setCheckHighlights(highlights);
       }
+
+      // Show score modal when game is lost (after a brief delay)
+      setTimeout(() => {
+        setShowScoreModal(true);
+      }, 500);
     }
   }, [puzzle, board, solved, lost, hintsRemaining, checksRemaining]);
 
@@ -661,7 +688,13 @@ function App() {
       {/* Score Modal */}
       <ScoreModal
         isOpen={showScoreModal}
-        onClose={() => setShowScoreModal(false)}
+        onClose={() => {
+          setShowScoreModal(false);
+          // If the game was lost, refresh the page to start fresh
+          if (lost) {
+            window.location.reload();
+          }
+        }}
         score={calculateScore()}
         timeElapsed={gameStats.timeElapsed}
         movesMade={gameStats.movesMade}
@@ -673,6 +706,7 @@ function App() {
         dateLabel={getShareDateLabel()}
         difficultyLabel={getDifficultyLabel()}
         puzzleNumber={getPuzzleNumber()}
+        lost={lost}
       />
 
       {/* Tutorial Modal */}
