@@ -6,7 +6,7 @@
  * Can also be called directly for testing or special cases.
  */
 
-import { generate, solve, cliquesToCages } from '../../../kenken';
+import { generate, solve, cliquesToCages } from 'api/kenken';
 
 export async function onRequestPost(
   context: {
