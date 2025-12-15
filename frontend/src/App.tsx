@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PuzzleBoard from './components/PuzzleBoard';
 import GameStats from './components/GameStats';
 import NumberPad from './components/NumberPad';
@@ -35,6 +35,10 @@ function App() {
   const [hintHighlight, setHintHighlight] = useState<[number, number] | null>(null);
   const [checkHighlights, setCheckHighlights] = useState<Map<string, 'correct' | 'incorrect'>>(new Map());
   const [lastAutoCheckedBoard, setLastAutoCheckedBoard] = useState<string>(''); // Track last auto-checked board state
+  const [puzzleKey, setPuzzleKey] = useState<string>(''); // Unique key for puzzle remounting
+  const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Store hint timeout for cleanup
+  const solvedTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Store solved modal timeout for cleanup
+  const lostTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Store lost modal timeout for cleanup
   const [showTutorial, setShowTutorial] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
@@ -51,9 +55,48 @@ function App() {
       .map(() => Array(puzzleSize).fill(0));
   };
 
-  // Timer effect
+  // Comprehensive state reset function
+  const resetAllGameState = useCallback(() => {
+    // Clear any pending timeouts
+    if (hintTimeoutRef.current) {
+      clearTimeout(hintTimeoutRef.current);
+      hintTimeoutRef.current = null;
+    }
+    if (solvedTimeoutRef.current) {
+      clearTimeout(solvedTimeoutRef.current);
+      solvedTimeoutRef.current = null;
+    }
+    if (lostTimeoutRef.current) {
+      clearTimeout(lostTimeoutRef.current);
+      lostTimeoutRef.current = null;
+    }
+    
+    setBoard([]);
+    setSelectedCell(null);
+    setGameStats({
+      timeElapsed: 0,
+      movesMade: 0,
+      hintsUsed: 0,
+      startTime: Date.now(),
+    });
+    setChecksUsed(0);
+    setHintsRemaining(3);
+    setChecksRemaining(3);
+    setErrors([]);
+    setHistory([]);
+    setHistoryIndex(-1);
+    setSolved(false);
+    setLost(false);
+    setHintHighlight(null);
+    setCheckHighlights(new Map());
+    setLastAutoCheckedBoard('');
+    setPuzzleKey(''); // Reset puzzle key
+    // Note: Don't reset showScoreModal here - it's controlled by game end states (solved/lost)
+  }, []);
+
+  // Timer effect with cleanup
   useEffect(() => {
-    if (!puzzle || solved) return;
+    if (!puzzle || solved || loading) return;
 
     const interval = setInterval(() => {
       setGameStats((prev) => ({
@@ -62,8 +105,20 @@ function App() {
       }));
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [puzzle, solved]);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [puzzle, solved, loading]);
+
+  // Cleanup hint timeout on unmount or puzzle change
+  useEffect(() => {
+    return () => {
+      if (hintTimeoutRef.current) {
+        clearTimeout(hintTimeoutRef.current);
+        hintTimeoutRef.current = null;
+      }
+    };
+  }, [puzzle]);
 
   // Check if puzzle is solved
   useEffect(() => {
@@ -78,12 +133,27 @@ function App() {
       if (isDailyPuzzle) {
         markPuzzleCompletedToday();
       }
+      // Clear any existing solved timeout
+      if (solvedTimeoutRef.current) {
+        clearTimeout(solvedTimeoutRef.current);
+      }
       // Show score modal after a brief delay
-      setTimeout(() => {
+      solvedTimeoutRef.current = setTimeout(() => {
         setShowScoreModal(true);
+        solvedTimeoutRef.current = null;
       }, 500);
     }
-  }, [puzzle, board, solved, showScoreModal, isDailyPuzzle, loading, lost]);
+  }, [puzzle, board, isDailyPuzzle, loading, lost, solved]); // Include solved to prevent re-checking
+
+  // Cleanup solved timeout only on puzzle change or unmount
+  useEffect(() => {
+    return () => {
+      if (solvedTimeoutRef.current) {
+        clearTimeout(solvedTimeoutRef.current);
+        solvedTimeoutRef.current = null;
+      }
+    };
+  }, [puzzle]); // Only cleanup when puzzle changes, not on every board change
 
   // Save to history
   const saveToHistory = useCallback((newBoard: number[][]) => {
@@ -99,15 +169,10 @@ function App() {
     setDailyPuzzleInfo(todayInfo);
     setIsDailyPuzzle(true);
     setSelectedDifficulty(null);
-    // Reset all game state BEFORE loading new puzzle
-    setSolved(false);
-    setLost(false);
-    setShowScoreModal(false);
-    setCheckHighlights(new Map());
-    setErrors([]);
-    setHintHighlight(null);
-    setSelectedCell(null); // Reset selected cell
-    setLastAutoCheckedBoard(''); // Reset auto-check tracking
+    
+    // Full state reset BEFORE loading new puzzle
+    resetAllGameState();
+    setShowScoreModal(false); // Explicitly close score modal when starting new puzzle
     setLoading(true);
     
     try {
@@ -120,6 +185,9 @@ function App() {
           const saved = dailySessions[todayInfo.date];
 
           if (saved && saved.puzzle && saved.board && Array.isArray(saved.board)) {
+            // Generate puzzle key for restored session
+            const puzzleId = `daily-${todayInfo.date}-restored`;
+            setPuzzleKey(puzzleId);
             setPuzzle(saved.puzzle as Puzzle);
             setBoard(saved.board as number[][]);
             setGameStats(
@@ -152,6 +220,9 @@ function App() {
 
       // No saved session for today – generate a new daily puzzle
       const response = await generatePuzzle(todayInfo.size, algorithm, todayInfo.seed);
+      // Generate unique puzzle key for forced remounting
+      const puzzleId = `daily-${todayInfo.date}-${Date.now()}`;
+      setPuzzleKey(puzzleId);
       setPuzzle(response.puzzle);
       const newBoard = initializeBoard(response.puzzle.size);
       setBoard(newBoard);
@@ -185,15 +256,10 @@ function App() {
   const handleDifficultySelect = async (size: number) => {
     setSelectedDifficulty(size);
     setIsDailyPuzzle(false); // This is practice mode, not daily puzzle
-    // Reset all game state BEFORE loading new puzzle
-    setSolved(false);
-    setLost(false);
-    setShowScoreModal(false);
-    setCheckHighlights(new Map());
-    setErrors([]);
-    setHintHighlight(null);
-    setSelectedCell(null); // Reset selected cell
-    setLastAutoCheckedBoard(''); // Reset auto-check tracking
+    
+    // Full state reset BEFORE loading new puzzle
+    resetAllGameState();
+    setShowScoreModal(false); // Explicitly close score modal when starting new puzzle
     setLoading(true);
     
     try {
@@ -202,6 +268,9 @@ function App() {
       const newBoard = initializeBoard(response.puzzle.size);
       
       // Set all state together to avoid race conditions
+      // Generate unique puzzle key for forced remounting
+      const puzzleId = `${size}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      setPuzzleKey(puzzleId);
       setPuzzle(response.puzzle);
       setBoard(newBoard);
       setGameStats({
@@ -216,9 +285,6 @@ function App() {
       setHistory([JSON.parse(JSON.stringify(newBoard))]);
       setHistoryIndex(0);
       setShowSideMenu(false);
-      // Ensure solved is false after puzzle loads
-      setSolved(false);
-      setLastAutoCheckedBoard(''); // Reset auto-check tracking
     } catch (error) {
       console.error('Error generating puzzle:', error);
       const errorMessage = error instanceof Error 
@@ -346,10 +412,16 @@ function App() {
           setGameStats((prev) => ({ ...prev, hintsUsed: prev.hintsUsed + 1 }));
           setHintsRemaining(prev => Math.max(0, prev - 1));
           
+          // Clear any existing hint timeout
+          if (hintTimeoutRef.current) {
+            clearTimeout(hintTimeoutRef.current);
+          }
+          
           // Set hint highlight for 2 seconds
           setHintHighlight([row, col]);
-          setTimeout(() => {
+          hintTimeoutRef.current = setTimeout(() => {
             setHintHighlight(null);
+            hintTimeoutRef.current = null;
           }, 2000);
           
           return;
@@ -393,14 +465,23 @@ function App() {
       setCheckHighlights(highlights);
       
       // Remove highlights after 3 seconds (unless player has lost, in which case loss highlights will override)
-      setTimeout(() => {
-        setCheckHighlights(new Map());
+      // Store timeout in a ref for cleanup
+      const checkTimeout = setTimeout(() => {
+        if (!lost) {
+          setCheckHighlights(new Map());
+        }
       }, 3000);
+      
+      // Cleanup will happen on component unmount or when puzzle changes
+      // Store timeout ID for potential cleanup if needed
       
       if (response.valid) {
         // Check if puzzle is actually solved
         if (isPuzzleSolved(puzzle, board)) {
           setSolved(true);
+          // Clear check highlights when solved
+          clearTimeout(checkTimeout);
+          setCheckHighlights(new Map());
         }
       }
     } catch (error) {
@@ -511,12 +592,27 @@ function App() {
         setCheckHighlights(highlights);
       }
 
+      // Clear any existing lost timeout
+      if (lostTimeoutRef.current) {
+        clearTimeout(lostTimeoutRef.current);
+      }
       // Show score modal when game is lost (after a brief delay)
-      setTimeout(() => {
+      lostTimeoutRef.current = setTimeout(() => {
         setShowScoreModal(true);
+        lostTimeoutRef.current = null;
       }, 500);
     }
-  }, [puzzle, board, solved, lost, hintsRemaining, checksRemaining]);
+  }, [puzzle, board, solved, hintsRemaining, checksRemaining]); // Removed 'lost' to prevent cleanup clearing timeout
+
+  // Cleanup lost timeout only on puzzle change or unmount
+  useEffect(() => {
+    return () => {
+      if (lostTimeoutRef.current) {
+        clearTimeout(lostTimeoutRef.current);
+        lostTimeoutRef.current = null;
+      }
+    };
+  }, [puzzle]); // Only cleanup when puzzle changes, not on every state change
 
   // Persist current sessions to storage whenever relevant state changes
   useEffect(() => {
@@ -598,6 +694,7 @@ function App() {
             {/* Puzzle Board - Centered */}
             <div className="flex justify-center mt-2">
               <PuzzleBoard
+                key={puzzleKey || `${puzzle.size}-${puzzle.cages.length}`}
                 puzzle={puzzle}
                 board={board}
                 selectedCell={selectedCell}
@@ -706,10 +803,6 @@ function App() {
         isOpen={showScoreModal}
         onClose={() => {
           setShowScoreModal(false);
-          // If the game was lost, refresh the page to start fresh
-          if (lost) {
-            window.location.reload();
-          }
         }}
         score={calculateScore()}
         timeElapsed={gameStats.timeElapsed}
