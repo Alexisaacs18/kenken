@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// .wrangler/tmp/bundle-BKgqfL/strip-cf-connecting-ip-header.js
+// .wrangler/tmp/bundle-Ld2w5C/strip-cf-connecting-ip-header.js
 function stripCfConnectingIPHeader(input, init) {
   const request = new Request(input, init);
   request.headers.delete("CF-Connecting-IP");
@@ -819,22 +819,26 @@ async function handleGenerateBySize(request, env) {
       if (cached) {
         const puzzles = JSON.parse(cached);
         if (puzzles && puzzles.length > 0) {
-          const firstPuzzle = puzzles[0];
-          const cages2 = firstPuzzle.cages;
+          const firstPuzzle = puzzles.shift();
+          const remainingPuzzles = puzzles;
+          if (remainingPuzzles.length > 0) {
+            await kv.put(key, JSON.stringify(remainingPuzzles), { expirationTtl: 86400 });
+          } else {
+            await kv.delete(key);
+          }
           return new Response(JSON.stringify({
             puzzle: {
               size: firstPuzzle.size,
-              cages: cages2,
+              cages: firstPuzzle.cages,
               solution: firstPuzzle.solution
             },
             stats: {
-              algorithm: "cached",
+              algorithm: "FC+MRV",
+              // Keep same algorithm name for consistency
               constraint_checks: 0,
               assignments: 0,
               completion_time: 0
-            },
-            usageCount: 4 - puzzles.length
-            // 1-3 = cache
+            }
           }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" }
           });
@@ -862,9 +866,7 @@ async function handleGenerateBySize(request, env) {
         constraint_checks: solutionResult.checks,
         assignments: solutionResult.assigns,
         completion_time: solutionResult.time
-      },
-      usageCount: 4
-      // Indicates this was generated on-demand
+      }
     };
     return new Response(JSON.stringify(response), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -920,7 +922,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-BKgqfL/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-Ld2w5C/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -952,7 +954,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-BKgqfL/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-Ld2w5C/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

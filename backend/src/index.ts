@@ -453,7 +453,9 @@ async function handleDeletePuzzle(request: Request, env: Env): Promise<Response>
   }
 }
 
-// POST /api/generate/[size]/[diff] - DB generation fallback
+// POST /api/generate/[size]/[diff] - Cache-first puzzle endpoint
+// Checks KV cache first, then falls back to on-demand generation
+// Response format matches exactly what frontend expects
 async function handleGenerateBySize(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url);
@@ -468,8 +470,7 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
       );
     }
 
-    // TRY CACHE FIRST even in generate fallback
-    // Use UTC date to match cron job key format
+    // Compute today's KV key (UTC date to match cron job)
     const today = new Date();
     const utcYear = today.getUTCFullYear();
     const utcMonth = String(today.getUTCMonth() + 1).padStart(2, '0');
@@ -477,29 +478,39 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
     const date = `${utcYear}-${utcMonth}-${utcDay}`;
     const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
     
+    // Try to read array of preloaded puzzles from KV
     const kv = env.PUZZLES_KV || env.KV_BINDING;
     if (kv) {
       const cached = await kv.get(key);
       if (cached) {
         const puzzles = JSON.parse(cached) as any[];
+        
+        // If array is non-empty, pop/shift one puzzle out
         if (puzzles && puzzles.length > 0) {
-          // Return first puzzle from cache
-          const firstPuzzle = puzzles[0];
-          const cages = firstPuzzle.cages;
+          const firstPuzzle = puzzles.shift()!; // Remove first puzzle from array
+          const remainingPuzzles = puzzles;
           
+          // Write the remaining puzzles back to KV
+          if (remainingPuzzles.length > 0) {
+            await kv.put(key, JSON.stringify(remainingPuzzles), { expirationTtl: 86400 });
+          } else {
+            // Array is now empty, delete the key
+            await kv.delete(key);
+          }
+          
+          // Return that puzzle in the exact same JSON format frontend expects
           return new Response(JSON.stringify({
             puzzle: {
               size: firstPuzzle.size,
-              cages,
+              cages: firstPuzzle.cages,
               solution: firstPuzzle.solution,
             },
             stats: {
-              algorithm: 'cached',
+              algorithm: 'FC+MRV', // Keep same algorithm name for consistency
               constraint_checks: 0,
               assignments: 0,
               completion_time: 0,
             },
-            usageCount: 4 - puzzles.length, // 1-3 = cache
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -507,19 +518,7 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
       }
     }
 
-    // If cache is empty, allow generation for now (until cron populates cache)
-    // Large puzzles (7x7+) will be slow but will work
-    // TODO: Once cron is running reliably, we can re-enable the block below
-    // if (size > 6) {
-    //   return new Response(
-    //     JSON.stringify({ 
-    //       error: `${size}x${size} puzzle generation disabled - please use preloaded cache. Cache may be empty if cron job hasn't run yet.` 
-    //     }),
-    //     { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    //   );
-    // }
-
-    // Generate puzzle on-demand (only for small puzzles)
+    // If array is empty or key missing, call existing generator function
     const seed = `${Date.now()}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);
@@ -533,7 +532,7 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
 
     const cages = cliquesToCages(cliques);
 
-    // Convert to frontend format
+    // Return the generated puzzle in the same JSON format
     const response = {
       puzzle: {
         size: puzzleSize,
@@ -546,7 +545,6 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
         assignments: solutionResult.assigns,
         completion_time: solutionResult.time,
       },
-      usageCount: 4, // Indicates this was generated on-demand
     };
 
     return new Response(JSON.stringify(response), {
