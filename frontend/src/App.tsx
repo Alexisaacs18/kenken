@@ -34,6 +34,7 @@ function App() {
   const [lost, setLost] = useState(false);
   const [hintHighlight, setHintHighlight] = useState<[number, number] | null>(null);
   const [checkHighlights, setCheckHighlights] = useState<Map<string, 'correct' | 'incorrect'>>(new Map());
+  const [lastAutoCheckedBoard, setLastAutoCheckedBoard] = useState<string>(''); // Track last auto-checked board state
   const [showTutorial, setShowTutorial] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
@@ -106,6 +107,7 @@ function App() {
     setErrors([]);
     setHintHighlight(null);
     setSelectedCell(null); // Reset selected cell
+    setLastAutoCheckedBoard(''); // Reset auto-check tracking
     setLoading(true);
     
     try {
@@ -167,6 +169,7 @@ function App() {
       setSolved(false);
       setErrors([]);
       setShowSideMenu(false);
+      setLastAutoCheckedBoard(''); // Reset auto-check tracking
     } catch (error) {
       console.error('Error loading daily puzzle:', error);
       const errorMessage = error instanceof Error 
@@ -190,6 +193,7 @@ function App() {
     setErrors([]);
     setHintHighlight(null);
     setSelectedCell(null); // Reset selected cell
+    setLastAutoCheckedBoard(''); // Reset auto-check tracking
     setLoading(true);
     
     try {
@@ -214,6 +218,7 @@ function App() {
       setShowSideMenu(false);
       // Ensure solved is false after puzzle loads
       setSolved(false);
+      setLastAutoCheckedBoard(''); // Reset auto-check tracking
     } catch (error) {
       console.error('Error generating puzzle:', error);
       const errorMessage = error instanceof Error 
@@ -317,6 +322,8 @@ function App() {
     saveToHistory(newBoard);
     setGameStats((prev) => ({ ...prev, movesMade: prev.movesMade + 1 }));
     setErrors([]);
+    // Reset auto-check tracking when user makes a move
+    setLastAutoCheckedBoard('');
   };
 
   // Handle number pad input
@@ -465,13 +472,22 @@ function App() {
     const isFull = board.length === puzzle.size &&
       board.every((row) => row.length === puzzle.size && row.every((v) => v > 0));
 
-    if (!isFull) return;
+    if (!isFull) {
+      // Reset auto-check tracking when board is no longer full
+      setLastAutoCheckedBoard('');
+      return;
+    }
 
     // If board is full but not solved, and we have checks left, auto-run a check
+    // But only if we haven't already checked this exact board state
     if (!isPuzzleSolved(puzzle, board) && checksRemaining > 0) {
-      void runCheck(true);
+      const boardKey = JSON.stringify(board);
+      if (boardKey !== lastAutoCheckedBoard) {
+        setLastAutoCheckedBoard(boardKey);
+        void runCheck(true);
+      }
     }
-  }, [board, puzzle, solved, lost, checksRemaining]);
+  }, [board, puzzle, solved, lost, checksRemaining, lastAutoCheckedBoard]);
 
   // Detect loss: all hints and checks exhausted without solving
   useEffect(() => {
