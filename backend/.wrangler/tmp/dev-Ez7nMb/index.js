@@ -331,7 +331,7 @@ __name(solve, "solve");
 function cliquesToCages(cliques) {
   return cliques.map(([members, operator, target]) => ({
     cells: members.map(([row, col]) => [row - 1, col - 1]),
-    operator: operator === "." ? "=" : operator,
+    operator,
     target
   }));
 }

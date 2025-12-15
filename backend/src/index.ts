@@ -53,7 +53,7 @@ export default {
 
 async function handleGenerate(request: Request): Promise<Response> {
   try {
-    const data = await request.json();
+    const data = await request.json() as { size?: number; algorithm?: string; seed?: string };
     const size = data.size || 4;
     const algorithm = data.algorithm || 'FC+MRV';
     const seed = data.seed || undefined;
@@ -102,7 +102,7 @@ async function handleGenerate(request: Request): Promise<Response> {
 
 async function handleSolve(request: Request): Promise<Response> {
   try {
-    const data = await request.json();
+    const data = await request.json() as { puzzle: any; algorithm?: string };
     const puzzleData = data.puzzle;
     const algorithm = data.algorithm || 'FC+MRV';
 
@@ -149,7 +149,7 @@ async function handleSolve(request: Request): Promise<Response> {
 
 async function handleValidate(request: Request): Promise<Response> {
   try {
-    const data = await request.json();
+    const data = await request.json() as { puzzle: any; board: number[][] };
     const puzzleData = data.puzzle;
     const board = data.board;
 

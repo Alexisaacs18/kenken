@@ -373,7 +373,7 @@ export function solve(size: number, cliques: Clique[]): {
 export function cliquesToCages(cliques: Clique[]) {
   return cliques.map(([members, operator, target]) => ({
     cells: members.map(([row, col]) => [row - 1, col - 1]) as [number, number][],
-    operator: (operator === '.' ? '=' : operator) as Operator,
+    operator: operator,
     target,
   }));
 }
