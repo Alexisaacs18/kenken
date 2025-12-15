@@ -5,6 +5,14 @@
 
 import { generate, solve, cliquesToCages } from './kenken';
 
+// Environment interface for type safety
+interface Env {
+  PUZZLES_KV?: KVNamespace;
+  PUZZLES_DB?: D1Database;
+  KV_BINDING?: KVNamespace;
+  DB?: D1Database;
+}
+
 // CORS headers helper
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,8 +20,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+// Map puzzle size to difficulty label
+function getDifficultyFromSize(size: number): string {
+  const difficultyMap: { [key: number]: string } = {
+    3: 'Beginner',
+    4: 'Easy',
+    5: 'Medium',
+    6: 'Intermediate',
+    7: 'Challenging',
+    8: 'Hard',
+    9: 'Expert',
+  };
+  return difficultyMap[size] || `Size${size}`;
+}
+
 export default {
-  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -25,7 +47,7 @@ export default {
 
     // Route requests
     if (path === '/api/generate' && method === 'POST') {
-      return handleGenerate(request);
+      return handleGenerate(request, env);
     } else if (path === '/api/solve' && method === 'POST') {
       return handleSolve(request);
     } else if (path === '/api/validate' && method === 'POST') {
@@ -51,14 +73,83 @@ export default {
   },
 };
 
-async function handleGenerate(request: Request): Promise<Response> {
+async function handleGenerate(request: Request, env: Env): Promise<Response> {
   try {
     const data = await request.json() as { size?: number; algorithm?: string; seed?: string };
     const size = data.size || 4;
     const algorithm = data.algorithm || 'FC+MRV';
     const seed = data.seed || undefined;
 
-    // Generate puzzle
+    // For sizes > 4, use KV/D1 cache instead of generating in-memory
+    if (size > 4) {
+      const difficulty = getDifficultyFromSize(size);
+      const cacheKey = `puzzle:${size}:${difficulty}`;
+
+      // Try KV cache first (use PUZZLES_KV if available, otherwise KV_BINDING)
+      const kv = env.PUZZLES_KV || env.KV_BINDING;
+      if (kv) {
+        const cached = await kv.get(cacheKey);
+        if (cached) {
+          const puzzleData = JSON.parse(cached);
+          return new Response(JSON.stringify({
+            puzzle: puzzleData.puzzle,
+            stats: puzzleData.stats || {
+              algorithm: 'cached',
+              constraint_checks: 0,
+              assignments: 0,
+              completion_time: 0,
+            },
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      // Try D1 database (use PUZZLES_DB if available, otherwise fall back to DB)
+      const db = env.PUZZLES_DB || env.DB;
+      if (db) {
+        try {
+          const result = await db.prepare(
+            'SELECT data FROM puzzles WHERE size = ? AND difficulty = ? LIMIT 1'
+          ).bind(size, difficulty).first<{ data: string }>();
+
+          if (result && result.data) {
+            const puzzleData = JSON.parse(result.data);
+            
+            // Store in KV for faster future access (use PUZZLES_KV if available, otherwise KV_BINDING)
+            const kv = env.PUZZLES_KV || env.KV_BINDING;
+            if (kv) {
+              await kv.put(cacheKey, result.data, { expirationTtl: 86400 * 7 }); // 7 days
+            }
+
+            return new Response(JSON.stringify({
+              puzzle: puzzleData.puzzle,
+              stats: puzzleData.stats || {
+                algorithm: 'cached',
+                constraint_checks: 0,
+                assignments: 0,
+                completion_time: 0,
+              },
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        } catch (dbError) {
+          console.error('Error querying D1:', dbError);
+          // Fall through to error response
+        }
+      }
+
+      // If not found in cache, return error for large puzzles
+      return new Response(
+        JSON.stringify({ 
+          error: `Puzzle ${size}x${size} (${difficulty}) not found in cache. Please ensure puzzles are precomputed and stored in D1.` 
+        }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // For sizes <= 4, generate in-memory (small puzzles are fast)
     const [puzzleSize, cliques] = generate(size, seed);
 
     // Solve to get solution
