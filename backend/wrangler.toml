@@ -4,3 +4,14 @@
 name = "kenken"
 main = "src/index.ts"
 compatibility_date = "2025-12-14"
+
+# KV namespace for job queue and sessions
+[[kv_namespaces]]
+ "binding": "KV_BINDING",
+ "id": "af61c05789c346df8127c9e126ee98dd"
+
+# D1 database for precomputed puzzles
+[[d1_databases]]
+"binding": "DB",
+"database_name": "puzzalo",
+"database_id": "e6bf372e-fc75-4225-9ee7-ee20b408ea60"
