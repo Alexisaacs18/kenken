@@ -11,6 +11,8 @@ import { isPuzzleSolved } from './utils/puzzleUtils';
 import { getTodayPuzzleInfo, getTomorrowPuzzleInfo, formatDateForDisplay, isPuzzleCompletedToday, markPuzzleCompletedToday } from './utils/dailyPuzzle';
 
 function App() {
+  const SESSION_KEY = 'kenken_sessions_v1';
+
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [board, setBoard] = useState<number[][]>([]);
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
@@ -59,46 +61,6 @@ function App() {
     return () => clearInterval(interval);
   }, [puzzle, solved]);
 
-  // Auto-load today's puzzle on mount
-  useEffect(() => {
-    // Only load if no puzzle is already loaded
-    if (puzzle) return;
-    
-    const loadDailyPuzzle = async () => {
-      const todayInfo = getTodayPuzzleInfo();
-      setDailyPuzzleInfo(todayInfo);
-      setIsDailyPuzzle(true);
-      setLoading(true);
-      
-      try {
-        const response = await generatePuzzle(todayInfo.size, algorithm, todayInfo.seed);
-        setPuzzle(response.puzzle);
-        const newBoard = initializeBoard(response.puzzle.size);
-        setBoard(newBoard);
-        setGameStats({
-          timeElapsed: 0,
-          movesMade: 0,
-          hintsUsed: 0,
-          startTime: Date.now(),
-        });
-        setChecksUsed(0);
-        setHintsRemaining(3);
-        setChecksRemaining(3);
-        setHistory([JSON.parse(JSON.stringify(newBoard))]);
-        setHistoryIndex(0);
-        setSolved(false);
-        setErrors([]);
-      } catch (error) {
-        console.error('Error loading daily puzzle:', error);
-        // Don't show alert for auto-load, just log
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadDailyPuzzle();
-  }, []); // Only run on mount
-
   // Check if puzzle is solved
   useEffect(() => {
     if (puzzle && board.length > 0 && !solved) {
@@ -124,7 +86,7 @@ function App() {
     setHistoryIndex(newHistory.length - 1);
   }, [history, historyIndex]);
 
-  // Handle loading daily puzzle
+  // Handle loading daily puzzle (restore if saved for today, otherwise generate new)
   const handleDailyPuzzle = async () => {
     const todayInfo = getTodayPuzzleInfo();
     setDailyPuzzleInfo(todayInfo);
@@ -133,6 +95,46 @@ function App() {
     setLoading(true);
     
     try {
+      // First, try to restore a saved daily session for today
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const sessions = JSON.parse(raw) as any;
+          const dailySessions = (sessions && sessions.daily) || {};
+          const saved = dailySessions[todayInfo.date];
+
+          if (saved && saved.puzzle && saved.board && Array.isArray(saved.board)) {
+            setPuzzle(saved.puzzle as Puzzle);
+            setBoard(saved.board as number[][]);
+            setGameStats(
+              (saved.gameStats as GameStatsType) ?? {
+                timeElapsed: 0,
+                movesMade: 0,
+                hintsUsed: 0,
+                startTime: Date.now(),
+              },
+            );
+            setChecksUsed(saved.checksUsed ?? 0);
+            setHintsRemaining(saved.hintsRemaining ?? 3);
+            setChecksRemaining(saved.checksRemaining ?? 3);
+            setSolved(saved.solved ?? false);
+            setShowSideMenu(saved.showMenu ?? false);
+            setHistory([JSON.parse(JSON.stringify(saved.board))]);
+            setHistoryIndex(0);
+
+            // Update last mode
+            const updated = {
+              ...(sessions || {}),
+              lastMode: 'daily',
+            };
+            localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      // No saved session for today – generate a new daily puzzle
       const response = await generatePuzzle(todayInfo.size, algorithm, todayInfo.seed);
       setPuzzle(response.puzzle);
       const newBoard = initializeBoard(response.puzzle.size);
@@ -169,6 +171,7 @@ function App() {
     setLoading(true);
     
     try {
+      // Always generate a fresh practice puzzle for this difficulty
       const response = await generatePuzzle(size, algorithm); // No seed for practice mode
       setPuzzle(response.puzzle);
       const newBoard = initializeBoard(response.puzzle.size);
@@ -198,6 +201,62 @@ function App() {
       setLoading(false);
     }
   };
+
+  // Load from storage on mount (restores daily or practice session)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (puzzle) return; // Don't override if something already loaded
+
+    const tryRestoreSession = async () => {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const sessions = JSON.parse(raw) as any;
+          const todayInfo = getTodayPuzzleInfo();
+
+          const dailySessions = (sessions && sessions.daily) || {};
+          const dailySaved = dailySessions[todayInfo.date];
+
+          const hasValidDaily =
+            dailySaved &&
+            dailySaved.puzzle &&
+            dailySaved.board &&
+            Array.isArray(dailySaved.board);
+
+          if (hasValidDaily) {
+            setIsDailyPuzzle(true);
+            setDailyPuzzleInfo(todayInfo);
+            setPuzzle(dailySaved.puzzle as Puzzle);
+            setBoard(dailySaved.board as number[][]);
+            setGameStats(
+              (dailySaved.gameStats as GameStatsType) ?? {
+                timeElapsed: 0,
+                movesMade: 0,
+                hintsUsed: 0,
+                startTime: Date.now(),
+              },
+            );
+            setChecksUsed(dailySaved.checksUsed ?? 0);
+            setHintsRemaining(dailySaved.hintsRemaining ?? 3);
+            setChecksRemaining(dailySaved.checksRemaining ?? 3);
+            setSolved(dailySaved.solved ?? false);
+            setShowSideMenu(dailySaved.showMenu ?? false);
+            setSelectedDifficulty(null);
+
+            return; // Successfully restored daily session
+          }
+        }
+      } catch (error) {
+        console.error('Error restoring session from storage:', error);
+      }
+
+      // Fallback: load today's daily puzzle
+      await handleDailyPuzzle();
+    };
+
+    void tryRestoreSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only on mount
 
   // Handle cell change
   const handleCellChange = (row: number, col: number, value: number) => {
@@ -321,6 +380,51 @@ function App() {
     return checksUsed;
   };
 
+  // Persist current sessions to storage whenever relevant state changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!puzzle) return;
+
+    try {
+      const todayInfo = getTodayPuzzleInfo();
+      const raw = localStorage.getItem(SESSION_KEY);
+      const sessions = raw ? JSON.parse(raw) as any : {};
+
+      if (isDailyPuzzle) {
+        const dailySessions = sessions.daily || {};
+        dailySessions[todayInfo.date] = {
+          puzzle,
+          board,
+          gameStats,
+          checksUsed,
+          hintsRemaining,
+          checksRemaining,
+          solved,
+          showMenu: showSideMenu,
+          isDailyChallenge: true,
+          dailyDate: todayInfo.date,
+        };
+        sessions.daily = dailySessions;
+        sessions.lastMode = 'daily';
+
+        localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+      }
+    } catch (error) {
+      console.error('Error saving session to storage:', error);
+    }
+  }, [
+    puzzle,
+    board,
+    gameStats,
+    checksUsed,
+    hintsRemaining,
+    checksRemaining,
+    solved,
+    showSideMenu,
+    selectedDifficulty,
+    isDailyPuzzle,
+  ]);
+
   return (
     <div className="min-h-screen bg-[#F7F6F3]">
       {/* Header - Mobile First */}
@@ -333,7 +437,7 @@ function App() {
             ☰
           </button>
           <h1 className="text-2xl font-semibold text-[#1A1A1A] tracking-tight" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-            KenKen
+            Puzzalo Games
           </h1>
           <div className="w-8" /> {/* Spacer for centering */}
         </div>
