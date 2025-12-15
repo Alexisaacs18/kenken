@@ -5,6 +5,7 @@ import NumberPad from './components/NumberPad';
 import SideMenu from './components/SideMenu';
 import ScoreModal from './components/ScoreModal';
 import TutorialModal from './components/TutorialModal';
+import DailyInstructionsModal from './components/DailyInstructionsModal';
 import type { Puzzle, Algorithm, GameStats as GameStatsType } from './types';
 import { generatePuzzle, validateBoard } from './api';
 import { isPuzzleSolved } from './utils/puzzleUtils';
@@ -35,6 +36,7 @@ function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
+  const [showDailyInstructions, setShowDailyInstructions] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [algorithm] = useState<Algorithm>('FC+MRV');
   const [dailyPuzzleInfo, setDailyPuzzleInfo] = useState(getTodayPuzzleInfo());
@@ -257,6 +259,26 @@ function App() {
     void tryRestoreSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // only on mount
+
+  // Show daily instructions modal once per session for daily puzzles
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!puzzle || !isDailyPuzzle) return;
+
+    // Check if instructions have been shown this session
+    const hasSeenInstructions = sessionStorage.getItem('kenken_daily_instructions_shown');
+    if (!hasSeenInstructions) {
+      setShowDailyInstructions(true);
+    }
+  }, [puzzle, isDailyPuzzle]);
+
+  // Handle closing daily instructions modal
+  const handleCloseDailyInstructions = () => {
+    setShowDailyInstructions(false);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('kenken_daily_instructions_shown', 'true');
+    }
+  };
 
   // Handle cell change
   const handleCellChange = (row: number, col: number, value: number) => {
@@ -612,6 +634,9 @@ function App() {
 
       {/* Tutorial Modal */}
       <TutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
+
+      {/* Daily Instructions Modal */}
+      <DailyInstructionsModal isOpen={showDailyInstructions} onClose={handleCloseDailyInstructions} />
     </div>
   );
 }
