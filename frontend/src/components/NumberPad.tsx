@@ -30,7 +30,7 @@ export default function NumberPad({
   return (
     <div className="w-full max-w-5xl mx-auto px-2">
       {/* Control buttons - centered */}
-      <div className="flex items-center justify-center gap-2 md:gap-3">
+        <div className="flex items-center justify-center gap-2 md:gap-3">
           <button
             onClick={onDelete}
             className={actionButtonClass}

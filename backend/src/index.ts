@@ -487,6 +487,7 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
         
         // If array is non-empty, pop/shift one puzzle out
         if (puzzles && puzzles.length > 0) {
+          console.log(`Cache hit for ${key}, returning puzzle (${puzzles.length} remaining)`);
           const firstPuzzle = puzzles.shift()!; // Remove first puzzle from array
           const remainingPuzzles = puzzles;
           
@@ -514,11 +515,18 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
+        } else {
+          console.log(`Cache empty for ${key} (array exists but is empty)`);
         }
+      } else {
+        console.log(`Cache miss for ${key} (key not found in KV)`);
       }
+    } else {
+      console.log(`No KV namespace available for ${key}`);
     }
 
     // If array is empty or key missing, call existing generator function
+    console.log(`Generating ${size}x${size} ${difficulty} puzzle on-demand (cache miss)`);
     const seed = `${Date.now()}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);

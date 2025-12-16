@@ -22,6 +22,7 @@ function App() {
     movesMade: 0,
     hintsUsed: 0,
     startTime: Date.now(),
+    attempts: 0,
   });
   const [checksUsed, setChecksUsed] = useState(0);
   const [hintsRemaining, setHintsRemaining] = useState(3);
@@ -78,6 +79,7 @@ function App() {
       movesMade: 0,
       hintsUsed: 0,
       startTime: Date.now(),
+      attempts: 0,
     });
     setChecksUsed(0);
     setHintsRemaining(3);
@@ -196,6 +198,7 @@ function App() {
                 movesMade: 0,
                 hintsUsed: 0,
                 startTime: Date.now(),
+                attempts: 0,
               },
             );
             setChecksUsed(saved.checksUsed ?? 0);
@@ -231,6 +234,7 @@ function App() {
         movesMade: 0,
         hintsUsed: 0,
         startTime: Date.now(),
+        attempts: 0,
       });
       setChecksUsed(0);
       setHintsRemaining(3);
@@ -263,13 +267,59 @@ function App() {
     setLoading(true);
     
     try {
-      // Always generate a fresh practice puzzle for this difficulty
+      // First, try to restore a saved practice session for this difficulty (only if from today)
+      const todayInfo = getTodayPuzzleInfo();
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const sessions = JSON.parse(raw) as any;
+          const practiceSessions = (sessions && sessions.practice) || {};
+          const saved = practiceSessions[size];
+
+          // Only restore if puzzle is from today (same refresh logic as daily puzzle)
+          if (saved && saved.puzzle && saved.board && Array.isArray(saved.board) && saved.date === todayInfo.date) {
+            // Restore saved practice puzzle for this difficulty
+            const puzzleId = `practice-${size}-${todayInfo.date}-restored`;
+            setPuzzleKey(puzzleId);
+            setPuzzle(saved.puzzle as Puzzle);
+            setBoard(saved.board as number[][]);
+            setGameStats(
+              (saved.gameStats as GameStatsType) ?? {
+                timeElapsed: 0,
+                movesMade: 0,
+                hintsUsed: 0,
+                startTime: Date.now(),
+                attempts: 0,
+              },
+            );
+            setChecksUsed(saved.checksUsed ?? 0);
+            setHintsRemaining(saved.hintsRemaining ?? 3);
+            setChecksRemaining(saved.checksRemaining ?? 3);
+            setSolved(saved.solved ?? false);
+            setShowSideMenu(saved.showMenu ?? false);
+            setHistory(saved.history ? JSON.parse(JSON.stringify(saved.history)) : [JSON.parse(JSON.stringify(saved.board))]);
+            setHistoryIndex(saved.historyIndex ?? 0);
+
+            // Update last mode
+            const updated = {
+              ...(sessions || {}),
+              lastMode: 'practice',
+              lastDifficulty: size,
+            };
+            localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      // No saved session for this difficulty today – generate a new practice puzzle
       const response = await generatePuzzle(size, algorithm); // No seed for practice mode
       const newBoard = initializeBoard(response.puzzle.size);
       
       // Set all state together to avoid race conditions
-      // Generate unique puzzle key for forced remounting
-      const puzzleId = `${size}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Generate unique puzzle key for forced remounting (include date so it refreshes daily)
+      const puzzleId = `practice-${size}-${todayInfo.date}-${Date.now()}`;
       setPuzzleKey(puzzleId);
       setPuzzle(response.puzzle);
       setBoard(newBoard);
@@ -278,6 +328,7 @@ function App() {
         movesMade: 0,
         hintsUsed: 0,
         startTime: Date.now(),
+        attempts: 0,
       });
       setChecksUsed(0);
       setHintsRemaining(3);
@@ -285,6 +336,9 @@ function App() {
       setHistory([JSON.parse(JSON.stringify(newBoard))]);
       setHistoryIndex(0);
       setShowSideMenu(false);
+      setSolved(false);
+      setErrors([]);
+      setLastAutoCheckedBoard(''); // Reset auto-check tracking
     } catch (error) {
       console.error('Error generating puzzle:', error);
       const errorMessage = error instanceof Error 
@@ -310,6 +364,7 @@ function App() {
           const sessions = JSON.parse(raw) as any;
           const todayInfo = getTodayPuzzleInfo();
 
+          // Check for daily puzzle first
           const dailySessions = (sessions && sessions.daily) || {};
           const dailySaved = dailySessions[todayInfo.date];
 
@@ -338,8 +393,48 @@ function App() {
             setSolved(dailySaved.solved ?? false);
             setShowSideMenu(dailySaved.showMenu ?? false);
             setSelectedDifficulty(null);
+            setHistory(dailySaved.history ? JSON.parse(JSON.stringify(dailySaved.history)) : [JSON.parse(JSON.stringify(dailySaved.board))]);
+            setHistoryIndex(dailySaved.historyIndex ?? 0);
 
             return; // Successfully restored daily session
+          }
+
+          // Check for practice puzzle (restore last difficulty if available and from today)
+          const practiceSessions = (sessions && sessions.practice) || {};
+          const lastDifficulty = sessions.lastDifficulty;
+          const practiceSaved = lastDifficulty ? practiceSessions[lastDifficulty] : null;
+
+          // Only restore if puzzle is from today (same refresh logic as daily puzzle)
+          const hasValidPractice =
+            practiceSaved &&
+            practiceSaved.puzzle &&
+            practiceSaved.board &&
+            Array.isArray(practiceSaved.board) &&
+            practiceSaved.date === todayInfo.date;
+
+          if (hasValidPractice && lastDifficulty) {
+            setIsDailyPuzzle(false);
+            setSelectedDifficulty(lastDifficulty);
+            setPuzzle(practiceSaved.puzzle as Puzzle);
+            setBoard(practiceSaved.board as number[][]);
+            setGameStats(
+              (practiceSaved.gameStats as GameStatsType) ?? {
+                timeElapsed: 0,
+                movesMade: 0,
+                hintsUsed: 0,
+                startTime: Date.now(),
+                attempts: 0,
+              },
+            );
+            setChecksUsed(practiceSaved.checksUsed ?? 0);
+            setHintsRemaining(practiceSaved.hintsRemaining ?? 3);
+            setChecksRemaining(practiceSaved.checksRemaining ?? 3);
+            setSolved(practiceSaved.solved ?? false);
+            setShowSideMenu(practiceSaved.showMenu ?? false);
+            setHistory(practiceSaved.history ? JSON.parse(JSON.stringify(practiceSaved.history)) : [JSON.parse(JSON.stringify(practiceSaved.board))]);
+            setHistoryIndex(practiceSaved.historyIndex ?? 0);
+
+            return; // Successfully restored practice session
           }
         }
       } catch (error) {
@@ -511,6 +606,37 @@ function App() {
     handleCellChange(row, col, 0);
   };
 
+  // Handle refresh puzzle (reset board to blank, increment attempts)
+  const handleRefreshPuzzle = () => {
+    if (!puzzle) return;
+    
+    // Reset board to blank
+    const newBoard = initializeBoard(puzzle.size);
+    setBoard(newBoard);
+    
+    // Reset game state but keep puzzle
+    setSelectedCell(null);
+    setGameStats({
+      timeElapsed: 0,
+      movesMade: 0,
+      hintsUsed: 0,
+      startTime: Date.now(),
+      attempts: gameStats.attempts + 1, // Increment attempts
+    });
+    setChecksUsed(0);
+    setHintsRemaining(3);
+    setChecksRemaining(3);
+    setErrors([]);
+    setHistory([JSON.parse(JSON.stringify(newBoard))]);
+    setHistoryIndex(0);
+    setSolved(false);
+    setLost(false);
+    setHintHighlight(null);
+    setCheckHighlights(new Map());
+    setLastAutoCheckedBoard('');
+    setShowScoreModal(false);
+  };
+
   // Calculate score
   const calculateScore = () => {
     return checksUsed;
@@ -637,9 +763,34 @@ function App() {
           showMenu: showSideMenu,
           isDailyChallenge: true,
           dailyDate: todayInfo.date,
+          history,
+          historyIndex,
         };
         sessions.daily = dailySessions;
         sessions.lastMode = 'daily';
+
+        localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+      } else if (selectedDifficulty !== null) {
+        // Save practice puzzle for this difficulty (include date so it refreshes daily)
+        const practiceSessions = sessions.practice || {};
+        practiceSessions[selectedDifficulty] = {
+          puzzle,
+          board,
+          gameStats,
+          checksUsed,
+          hintsRemaining,
+          checksRemaining,
+          solved,
+          showMenu: showSideMenu,
+          isDailyChallenge: false,
+          difficulty: selectedDifficulty,
+          date: todayInfo.date, // Store date so puzzle refreshes daily
+          history,
+          historyIndex,
+        };
+        sessions.practice = practiceSessions;
+        sessions.lastMode = 'practice';
+        sessions.lastDifficulty = selectedDifficulty;
 
         localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
       }
@@ -657,6 +808,8 @@ function App() {
     showSideMenu,
     selectedDifficulty,
     isDailyPuzzle,
+    history,
+    historyIndex,
   ]);
 
   return (
@@ -720,6 +873,22 @@ function App() {
                 checksRemaining={checksRemaining}
               />
             </div>
+
+            {/* Refresh Button - Shows when puzzle is lost (solved incorrectly) - Works for both daily and practice */}
+            {lost && (
+              <div className="flex justify-center mt-6">
+                <button
+                  onClick={handleRefreshPuzzle}
+                  className="px-4 py-2 text-sm font-medium text-[#666666] bg-white border border-[#E0E0E0] rounded-sm hover:bg-[#F7F6F3] hover:border-[#999999] transition-colors flex items-center justify-center gap-2"
+                  style={{ fontFamily: "'Lora', Georgia, serif" }}
+                >
+                  <svg className="w-4 h-4 text-[#666666]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Refresh Puzzle</span>
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-white p-12 rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-center border border-[#E0E0E0] min-h-[60vh] flex items-center justify-center">
@@ -809,6 +978,7 @@ function App() {
         movesMade={gameStats.movesMade}
         hintsUsed={gameStats.hintsUsed}
         checksUsed={checksUsed}
+        attempts={gameStats.attempts}
         puzzle={puzzle}
         board={board}
         isDailyPuzzle={isDailyPuzzle}

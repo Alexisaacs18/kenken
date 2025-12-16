@@ -819,6 +819,7 @@ async function handleGenerateBySize(request, env) {
       if (cached) {
         const puzzles = JSON.parse(cached);
         if (puzzles && puzzles.length > 0) {
+          console.log(`Cache hit for ${key}, returning puzzle (${puzzles.length} remaining)`);
           const firstPuzzle = puzzles.shift();
           const remainingPuzzles = puzzles;
           if (remainingPuzzles.length > 0) {
@@ -842,9 +843,16 @@ async function handleGenerateBySize(request, env) {
           }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" }
           });
+        } else {
+          console.log(`Cache empty for ${key} (array exists but is empty)`);
         }
+      } else {
+        console.log(`Cache miss for ${key} (key not found in KV)`);
       }
+    } else {
+      console.log(`No KV namespace available for ${key}`);
     }
+    console.log(`Generating ${size}x${size} ${difficulty} puzzle on-demand (cache miss)`);
     const seed = `${Date.now()}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);

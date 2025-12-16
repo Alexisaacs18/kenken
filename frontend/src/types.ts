@@ -50,4 +50,5 @@ export interface GameStats {
   movesMade: number;
   hintsUsed: number;
   startTime: number;
+  attempts: number; // Number of times puzzle was reset/refreshed
 }

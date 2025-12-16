@@ -12,6 +12,7 @@ interface ScoreModalProps {
   movesMade: number;
   hintsUsed: number;
   checksUsed: number;
+  attempts?: number; // Number of times puzzle was reset/refreshed
   puzzle: Puzzle | null;
   board: number[][];
   isDailyPuzzle: boolean;
@@ -30,6 +31,7 @@ export default function ScoreModal({
   movesMade,
   hintsUsed,
   checksUsed,
+  attempts = 0,
   puzzle,
   board,
   isDailyPuzzle,
@@ -124,9 +126,13 @@ export default function ScoreModal({
             <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Hints Used:</span>
             <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{hintsUsed}</span>
           </div>
-          <div className="flex justify-between items-baseline">
+          <div className="flex justify-between items-baseline border-b border-[#E0E0E0] pb-2">
             <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Checks Used:</span>
             <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{checksUsed}</span>
+          </div>
+          <div className="flex justify-between items-baseline">
+            <span className="text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>Attempts:</span>
+            <span className="font-medium text-[#1A1A1A]" style={{ fontFamily: "'Lora', Georgia, serif" }}>{attempts || 0}</span>
           </div>
         </div>
 
