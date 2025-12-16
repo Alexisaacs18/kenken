@@ -535,24 +535,9 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // only on mount
 
-  // Show daily instructions modal once per session for daily puzzles
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!puzzle || !isDailyPuzzle) return;
-
-    // Check if instructions have been shown this session
-    const hasSeenInstructions = sessionStorage.getItem('kenken_daily_instructions_shown');
-    if (!hasSeenInstructions) {
-      setShowDailyInstructions(true);
-    }
-  }, [puzzle, isDailyPuzzle]);
-
   // Handle closing daily instructions modal
   const handleCloseDailyInstructions = () => {
     setShowDailyInstructions(false);
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('kenken_daily_instructions_shown', 'true');
-    }
   };
 
   // Handle cell change
