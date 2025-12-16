@@ -98,12 +98,12 @@ export default function ScoreModal({
           </h2>
           {!lost && (
             <>
-              <div className="text-4xl font-bold text-[#1A1A1A] mb-4" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-                Score: {score}
-              </div>
-              <p className="text-sm text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
-                Lower is better
-              </p>
+          <div className="text-4xl font-bold text-[#1A1A1A] mb-4" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+            Score: {score}
+          </div>
+          <p className="text-sm text-[#666666]" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+            Lower is better
+          </p>
             </>
           )}
           {lost && (
@@ -144,14 +144,14 @@ export default function ScoreModal({
           >
             <span>Share</span>
           </button>
-          <button
-            onClick={onClose}
+        <button
+          onClick={onClose}
             className="w-full sm:w-1/2 px-4 py-3 text-sm font-medium bg-[#1A1A1A] text-white border border-[#1A1A1A] rounded-sm hover:bg-[#333333] transition-colors"
-            style={{ fontFamily: "'Lora', Georgia, serif" }}
-          >
-            Close
-          </button>
-        </div>
+          style={{ fontFamily: "'Lora', Georgia, serif" }}
+        >
+          Close
+        </button>
+      </div>
       </div>
 
       <ShareModal
