@@ -1,9 +1,19 @@
 /**
  * Cloudflare Worker Cron Job: Daily Puzzle Preloader
- * Runs daily at 00:05 UTC to preload 3 puzzles per size/difficulty combo
+ * Runs daily at 00:05 UTC to preload exactly 1 puzzle per size/difficulty combo + 1 Puzzle of the Day
  */
 
 import { generate, solve, cliquesToCages } from './kenken';
+import {
+  todayUtcDate,
+  puzzleKey,
+  puzzleOfDayKey,
+  putDailyPuzzleInKV,
+  putPuzzleOfDayInKV,
+  isPuzzleOfDay,
+  type Difficulty,
+  type KenKenPuzzle,
+} from './dailyPuzzles';
 
 interface Env {
   PUZZLES_KV?: KVNamespace;
@@ -12,33 +22,14 @@ interface Env {
   DB?: D1Database;
 }
 
-interface PuzzleData {
-  id: string;
-  size: number;
-  difficulty: string;
-  grid: number[][];
-  cages: Array<{
-    cells: [number, number][];
-    operator: string;
-    target: number;
-  }>;
-  operations: string[];
-  solution: number[][];
-  generatedAt: string;
-}
-
-// Map difficulty to size ranges for generation
-function getSizeForDifficulty(difficulty: string): number[] {
-  const difficultyMap: { [key: string]: number[] } = {
-    easy: [3, 4, 5],
-    medium: [5, 6, 7],
-    hard: [7, 8, 9],
-  };
-  return difficultyMap[difficulty] || [4];
-}
-
-// Generate a single puzzle
-async function generatePuzzle(size: number, difficulty: string, seed?: string): Promise<PuzzleData | null> {
+/**
+ * Generate a single puzzle in the format expected by the frontend
+ */
+async function generatePuzzleForCache(
+  size: number,
+  difficulty: Difficulty,
+  seed?: string
+): Promise<KenKenPuzzle | null> {
   try {
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);
@@ -49,17 +40,19 @@ async function generatePuzzle(size: number, difficulty: string, seed?: string): 
     }
 
     const cages = cliquesToCages(cliques);
-    const operations = cliques.map(([, op]) => op);
 
     return {
-      id: `${size}x${size}-${difficulty}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      size: puzzleSize,
-      difficulty,
-      grid: Array(size).fill(0).map(() => Array(size).fill(0)), // Empty grid
-      cages,
-      operations,
-      solution: solutionResult.solution,
-      generatedAt: new Date().toISOString(),
+      puzzle: {
+        size: puzzleSize,
+        cages,
+        solution: solutionResult.solution,
+      },
+      stats: {
+        algorithm: 'FC+MRV',
+        constraint_checks: solutionResult.checks,
+        assignments: solutionResult.assigns,
+        completion_time: solutionResult.time,
+      },
     };
   } catch (error) {
     console.error(`Error generating ${size}x${size} ${difficulty} puzzle:`, error);
@@ -67,90 +60,135 @@ async function generatePuzzle(size: number, difficulty: string, seed?: string): 
   }
 }
 
-// Preload puzzles for a specific size/difficulty combo
-// Ensures exactly 3 puzzles per day (reads existing, generates missing, stores exactly 3)
-async function preloadPuzzles(
+/**
+ * Preload exactly one puzzle for a specific size/difficulty combo
+ * Only generates if the key doesn't exist in KV
+ */
+async function preloadSinglePuzzle(
   size: number,
-  difficulty: string,
+  difficulty: Difficulty,
   date: string,
-  kv: KVNamespace,
-  targetCount: number = 3
-): Promise<number> {
-  const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
+  env: Env
+): Promise<boolean> {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    console.error('No KV namespace available');
+    return false;
+  }
+
+  const key = puzzleKey(size, difficulty, date);
   
-  // Check existing puzzles
+  // Check if puzzle already exists
   const existing = await kv.get(key);
-  let puzzles: PuzzleData[] = existing ? JSON.parse(existing) : [];
+  if (existing) {
+    console.log(`Puzzle already exists for ${key}, skipping generation`);
+    return true;
+  }
+
+  // Generate the puzzle
+  console.log(`Generating puzzle for ${key}...`);
+  const seed = `${date}-${size}-${difficulty}`;
+  const puzzle = await generatePuzzleForCache(size, difficulty, seed);
   
-  // Ensure we have exactly targetCount puzzles (not more, not less)
-  // If we have more than targetCount, trim to targetCount
-  // If we have fewer, generate the missing ones
-  if (puzzles.length >= targetCount) {
-    // Trim to exactly targetCount (in case of stale data)
-    puzzles = puzzles.slice(0, targetCount);
-    await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
-    console.log(`Already have ${puzzles.length} puzzles for ${key} (trimmed to ${targetCount})`);
-    return puzzles.length;
+  if (!puzzle) {
+    console.error(`Failed to generate puzzle for ${key}`);
+    return false;
   }
 
-  const needed = targetCount - puzzles.length;
-  console.log(`Generating ${needed} puzzles for ${key} (have ${puzzles.length}, need ${targetCount})...`);
-  const newPuzzles: PuzzleData[] = [];
+  // Store in KV
+  await putDailyPuzzleInKV(env, size, difficulty, puzzle);
+  console.log(`Stored puzzle for ${key}`);
+  return true;
+}
 
-  for (let i = 0; i < needed; i++) {
-    const seed = `${date}-${size}-${difficulty}-${puzzles.length + i}`;
-    const puzzle = await generatePuzzle(size, difficulty, seed);
-    if (puzzle) {
-      newPuzzles.push(puzzle);
-    } else {
-      console.error(`Failed to generate puzzle ${i + 1}/${needed} for ${key}`);
-    }
-    // Small delay to avoid overwhelming the system
-    await new Promise(resolve => setTimeout(resolve, 100));
+/**
+ * Generate and store the Puzzle of the Day
+ */
+async function preloadPuzzleOfDay(env: Env): Promise<boolean> {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    console.error('No KV namespace available');
+    return false;
   }
 
-  // Combine with existing puzzles (ensures exactly targetCount)
-  puzzles = [...puzzles, ...newPuzzles].slice(0, targetCount);
+  const date = todayUtcDate();
+  const key = puzzleOfDayKey(date);
+  
+  // Check if PoD already exists
+  const existing = await kv.get(key);
+  if (existing) {
+    console.log(`Puzzle of the Day already exists for ${key}, skipping generation`);
+    return true;
+  }
 
-  // Store in KV with 24h TTL (86400 seconds)
-  await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
+  // Determine today's PoD size and difficulty based on day of week
+  const today = new Date();
+  const dayOfWeek = today.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  
+  const dayMapping: { [key: number]: { size: number; difficulty: Difficulty } } = {
+    1: { size: 3, difficulty: 'easy' },      // Monday - Beginner
+    2: { size: 4, difficulty: 'easy' },       // Tuesday - Easy
+    3: { size: 5, difficulty: 'medium' },     // Wednesday - Medium
+    4: { size: 6, difficulty: 'medium' },     // Thursday - Intermediate
+    5: { size: 7, difficulty: 'hard' },       // Friday - Challenging
+    6: { size: 8, difficulty: 'hard' },       // Saturday - Hard
+    0: { size: 9, difficulty: 'hard' },       // Sunday - Expert
+  };
+  
+  const pod = dayMapping[dayOfWeek];
+  if (!pod) {
+    console.error(`Invalid day of week: ${dayOfWeek}`);
+    return false;
+  }
 
-  console.log(`Stored exactly ${puzzles.length} puzzles for ${key}`);
-  return puzzles.length;
+  // Generate the PoD
+  console.log(`Generating Puzzle of the Day for ${date} (${pod.size}x${pod.size} ${pod.difficulty})...`);
+  const seed = `${date}-pod-${pod.size}-${pod.difficulty}`;
+  const puzzle = await generatePuzzleForCache(pod.size, pod.difficulty, seed);
+  
+  if (!puzzle) {
+    console.error(`Failed to generate Puzzle of the Day for ${key}`);
+    return false;
+  }
+
+  // Store in KV
+  await putPuzzleOfDayInKV(env, puzzle);
+  console.log(`Stored Puzzle of the Day for ${key}`);
+  return true;
 }
 
 // Main cron handler
 export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    const kv = env.PUZZLES_KV || env.KV_BINDING;
-    if (!kv) {
-      console.error('No KV namespace available');
-      return;
-    }
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    console.error('No KV namespace available');
+    return;
+  }
 
-    // Use UTC date to match the 00:05 UTC cron schedule
-    const today = new Date();
-    const utcYear = today.getUTCFullYear();
-    const utcMonth = String(today.getUTCMonth() + 1).padStart(2, '0');
-    const utcDay = String(today.getUTCDate()).padStart(2, '0');
-    const date = `${utcYear}-${utcMonth}-${utcDay}`;
+  const date = todayUtcDate();
+  const sizes = [3, 4, 5, 6, 7, 8, 9];
+  const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
 
-    const sizes = [3, 4, 5, 6, 7, 8, 9];
-    const difficulties = ['easy', 'medium', 'hard'];
+  console.log(`Starting daily puzzle preload for ${date}...`);
 
-    console.log(`Starting daily puzzle preload for ${date}...`);
-
-    // Generate puzzles for EACH size and EACH difficulty combo
-    // This ensures 3 puzzles per size/difficulty (e.g., 3x3 easy, 3x3 medium, 3x3 hard, etc.)
-    for (const size of sizes) {
-      for (const difficulty of difficulties) {
-        try {
-          await preloadPuzzles(size, difficulty, date, kv, 3);
-        } catch (error) {
-          console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
-        }
+  // Generate exactly 1 puzzle per size/difficulty combo
+  for (const size of sizes) {
+    for (const difficulty of difficulties) {
+      try {
+        await preloadSinglePuzzle(size, difficulty, date, env);
+      } catch (error) {
+        console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
       }
     }
+  }
 
-    console.log(`Daily puzzle preload completed for ${date}`);
+  // Generate Puzzle of the Day
+  try {
+    await preloadPuzzleOfDay(env);
+  } catch (error) {
+    console.error('Error preloading Puzzle of the Day:', error);
+  }
+
+  console.log(`Daily puzzle preload completed for ${date}`);
 }
 

@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// .wrangler/tmp/bundle-Ld2w5C/strip-cf-connecting-ip-header.js
+// .wrangler/tmp/bundle-nZDJSc/strip-cf-connecting-ip-header.js
 function stripCfConnectingIPHeader(input, init) {
   const request = new Request(input, init);
   request.headers.delete("CF-Connecting-IP");
@@ -337,8 +337,105 @@ function cliquesToCages(cliques) {
 }
 __name(cliquesToCages, "cliquesToCages");
 
+// src/dailyPuzzles.ts
+function todayUtcDate() {
+  const today = /* @__PURE__ */ new Date();
+  const utcYear = today.getUTCFullYear();
+  const utcMonth = String(today.getUTCMonth() + 1).padStart(2, "0");
+  const utcDay = String(today.getUTCDate()).padStart(2, "0");
+  return `${utcYear}-${utcMonth}-${utcDay}`;
+}
+__name(todayUtcDate, "todayUtcDate");
+function puzzleKey(size, difficulty, date) {
+  const dateStr = date || todayUtcDate();
+  return `puzzle:${size}x${size}:${difficulty}:${dateStr}`;
+}
+__name(puzzleKey, "puzzleKey");
+function puzzleOfDayKey(date) {
+  const dateStr = date || todayUtcDate();
+  return `pod:${dateStr}`;
+}
+__name(puzzleOfDayKey, "puzzleOfDayKey");
+async function getDailyPuzzleFromKV(env, size, difficulty) {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    return null;
+  }
+  const key = puzzleKey(size, difficulty);
+  const cached = await kv.get(key);
+  if (!cached) {
+    return null;
+  }
+  try {
+    return JSON.parse(cached);
+  } catch (error) {
+    console.error(`Error parsing cached puzzle for ${key}:`, error);
+    return null;
+  }
+}
+__name(getDailyPuzzleFromKV, "getDailyPuzzleFromKV");
+async function putDailyPuzzleInKV(env, size, difficulty, puzzle) {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    throw new Error("KV namespace not available");
+  }
+  const key = puzzleKey(size, difficulty);
+  await kv.put(key, JSON.stringify(puzzle), { expirationTtl: 86400 });
+}
+__name(putDailyPuzzleInKV, "putDailyPuzzleInKV");
+async function getPuzzleOfDayFromKV(env) {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    return null;
+  }
+  const key = puzzleOfDayKey();
+  const cached = await kv.get(key);
+  if (!cached) {
+    return null;
+  }
+  try {
+    return JSON.parse(cached);
+  } catch (error) {
+    console.error(`Error parsing cached PoD for ${key}:`, error);
+    return null;
+  }
+}
+__name(getPuzzleOfDayFromKV, "getPuzzleOfDayFromKV");
+async function putPuzzleOfDayInKV(env, puzzle) {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    throw new Error("KV namespace not available");
+  }
+  const key = puzzleOfDayKey();
+  await kv.put(key, JSON.stringify(puzzle), { expirationTtl: 86400 });
+}
+__name(putPuzzleOfDayInKV, "putPuzzleOfDayInKV");
+function isPuzzleOfDay(size, difficulty) {
+  const today = /* @__PURE__ */ new Date();
+  const dayOfWeek = today.getUTCDay();
+  const dayMapping = {
+    1: { size: 3, difficulty: "easy" },
+    // Monday - Beginner (3x3 easy)
+    2: { size: 4, difficulty: "easy" },
+    // Tuesday - Easy (4x4 easy)
+    3: { size: 5, difficulty: "medium" },
+    // Wednesday - Medium (5x5 medium)
+    4: { size: 6, difficulty: "medium" },
+    // Thursday - Intermediate (6x6 medium)
+    5: { size: 7, difficulty: "hard" },
+    // Friday - Challenging (7x7 hard)
+    6: { size: 8, difficulty: "hard" },
+    // Saturday - Hard (8x8 hard)
+    0: { size: 9, difficulty: "hard" }
+    // Sunday - Expert (9x9 hard)
+  };
+  const expected = dayMapping[dayOfWeek];
+  return expected && expected.size === size && expected.difficulty === difficulty;
+}
+__name(isPuzzleOfDay, "isPuzzleOfDay");
+
 // src/cron.ts
-async function generatePuzzle(size, difficulty, seed) {
+async function generatePuzzleForCache(size, difficulty, seed) {
   try {
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);
@@ -347,75 +444,120 @@ async function generatePuzzle(size, difficulty, seed) {
       return null;
     }
     const cages = cliquesToCages(cliques);
-    const operations = cliques.map(([, op]) => op);
     return {
-      id: `${size}x${size}-${difficulty}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      size: puzzleSize,
-      difficulty,
-      grid: Array(size).fill(0).map(() => Array(size).fill(0)),
-      // Empty grid
-      cages,
-      operations,
-      solution: solutionResult.solution,
-      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      puzzle: {
+        size: puzzleSize,
+        cages,
+        solution: solutionResult.solution
+      },
+      stats: {
+        algorithm: "FC+MRV",
+        constraint_checks: solutionResult.checks,
+        assignments: solutionResult.assigns,
+        completion_time: solutionResult.time
+      }
     };
   } catch (error) {
     console.error(`Error generating ${size}x${size} ${difficulty} puzzle:`, error);
     return null;
   }
 }
-__name(generatePuzzle, "generatePuzzle");
-async function preloadPuzzles(size, difficulty, date, kv, targetCount = 3) {
-  const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
+__name(generatePuzzleForCache, "generatePuzzleForCache");
+async function preloadSinglePuzzle(size, difficulty, date, env) {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    console.error("No KV namespace available");
+    return false;
+  }
+  const key = puzzleKey(size, difficulty, date);
   const existing = await kv.get(key);
-  let puzzles = existing ? JSON.parse(existing) : [];
-  if (puzzles.length >= targetCount) {
-    puzzles = puzzles.slice(0, targetCount);
-    await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
-    console.log(`Already have ${puzzles.length} puzzles for ${key} (trimmed to ${targetCount})`);
-    return puzzles.length;
+  if (existing) {
+    console.log(`Puzzle already exists for ${key}, skipping generation`);
+    return true;
   }
-  const needed = targetCount - puzzles.length;
-  console.log(`Generating ${needed} puzzles for ${key} (have ${puzzles.length}, need ${targetCount})...`);
-  const newPuzzles = [];
-  for (let i = 0; i < needed; i++) {
-    const seed = `${date}-${size}-${difficulty}-${puzzles.length + i}`;
-    const puzzle = await generatePuzzle(size, difficulty, seed);
-    if (puzzle) {
-      newPuzzles.push(puzzle);
-    } else {
-      console.error(`Failed to generate puzzle ${i + 1}/${needed} for ${key}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  console.log(`Generating puzzle for ${key}...`);
+  const seed = `${date}-${size}-${difficulty}`;
+  const puzzle = await generatePuzzleForCache(size, difficulty, seed);
+  if (!puzzle) {
+    console.error(`Failed to generate puzzle for ${key}`);
+    return false;
   }
-  puzzles = [...puzzles, ...newPuzzles].slice(0, targetCount);
-  await kv.put(key, JSON.stringify(puzzles), { expirationTtl: 86400 });
-  console.log(`Stored exactly ${puzzles.length} puzzles for ${key}`);
-  return puzzles.length;
+  await putDailyPuzzleInKV(env, size, difficulty, puzzle);
+  console.log(`Stored puzzle for ${key}`);
+  return true;
 }
-__name(preloadPuzzles, "preloadPuzzles");
+__name(preloadSinglePuzzle, "preloadSinglePuzzle");
+async function preloadPuzzleOfDay(env) {
+  const kv = env.PUZZLES_KV || env.KV_BINDING;
+  if (!kv) {
+    console.error("No KV namespace available");
+    return false;
+  }
+  const date = todayUtcDate();
+  const key = puzzleOfDayKey(date);
+  const existing = await kv.get(key);
+  if (existing) {
+    console.log(`Puzzle of the Day already exists for ${key}, skipping generation`);
+    return true;
+  }
+  const today = /* @__PURE__ */ new Date();
+  const dayOfWeek = today.getUTCDay();
+  const dayMapping = {
+    1: { size: 3, difficulty: "easy" },
+    // Monday - Beginner
+    2: { size: 4, difficulty: "easy" },
+    // Tuesday - Easy
+    3: { size: 5, difficulty: "medium" },
+    // Wednesday - Medium
+    4: { size: 6, difficulty: "medium" },
+    // Thursday - Intermediate
+    5: { size: 7, difficulty: "hard" },
+    // Friday - Challenging
+    6: { size: 8, difficulty: "hard" },
+    // Saturday - Hard
+    0: { size: 9, difficulty: "hard" }
+    // Sunday - Expert
+  };
+  const pod = dayMapping[dayOfWeek];
+  if (!pod) {
+    console.error(`Invalid day of week: ${dayOfWeek}`);
+    return false;
+  }
+  console.log(`Generating Puzzle of the Day for ${date} (${pod.size}x${pod.size} ${pod.difficulty})...`);
+  const seed = `${date}-pod-${pod.size}-${pod.difficulty}`;
+  const puzzle = await generatePuzzleForCache(pod.size, pod.difficulty, seed);
+  if (!puzzle) {
+    console.error(`Failed to generate Puzzle of the Day for ${key}`);
+    return false;
+  }
+  await putPuzzleOfDayInKV(env, puzzle);
+  console.log(`Stored Puzzle of the Day for ${key}`);
+  return true;
+}
+__name(preloadPuzzleOfDay, "preloadPuzzleOfDay");
 async function scheduled(event, env, ctx) {
   const kv = env.PUZZLES_KV || env.KV_BINDING;
   if (!kv) {
     console.error("No KV namespace available");
     return;
   }
-  const today = /* @__PURE__ */ new Date();
-  const utcYear = today.getUTCFullYear();
-  const utcMonth = String(today.getUTCMonth() + 1).padStart(2, "0");
-  const utcDay = String(today.getUTCDate()).padStart(2, "0");
-  const date = `${utcYear}-${utcMonth}-${utcDay}`;
+  const date = todayUtcDate();
   const sizes = [3, 4, 5, 6, 7, 8, 9];
   const difficulties = ["easy", "medium", "hard"];
   console.log(`Starting daily puzzle preload for ${date}...`);
   for (const size of sizes) {
     for (const difficulty of difficulties) {
       try {
-        await preloadPuzzles(size, difficulty, date, kv, 3);
+        await preloadSinglePuzzle(size, difficulty, date, env);
       } catch (error) {
         console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
       }
     }
+  }
+  try {
+    await preloadPuzzleOfDay(env);
+  } catch (error) {
+    console.error("Error preloading Puzzle of the Day:", error);
   }
   console.log(`Daily puzzle preload completed for ${date}`);
 }
@@ -800,59 +942,33 @@ async function handleGenerateBySize(request, env) {
     const url = new URL(request.url);
     const pathParts = url.pathname.replace("/api/generate/", "").split("/");
     const size = parseInt(pathParts[0]);
-    const difficulty = pathParts[1] || "medium";
+    const difficultyStr = pathParts[1] || "medium";
     if (isNaN(size) || size < 3 || size > 9) {
       return new Response(
         JSON.stringify({ error: "Invalid size. Must be between 3 and 9." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const today = /* @__PURE__ */ new Date();
-    const utcYear = today.getUTCFullYear();
-    const utcMonth = String(today.getUTCMonth() + 1).padStart(2, "0");
-    const utcDay = String(today.getUTCDate()).padStart(2, "0");
-    const date = `${utcYear}-${utcMonth}-${utcDay}`;
-    const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
-    const kv = env.PUZZLES_KV || env.KV_BINDING;
-    if (kv) {
-      const cached = await kv.get(key);
-      if (cached) {
-        const puzzles = JSON.parse(cached);
-        if (puzzles && puzzles.length > 0) {
-          console.log(`Cache hit for ${key}, returning puzzle (${puzzles.length} remaining)`);
-          const firstPuzzle = puzzles.shift();
-          const remainingPuzzles = puzzles;
-          if (remainingPuzzles.length > 0) {
-            await kv.put(key, JSON.stringify(remainingPuzzles), { expirationTtl: 86400 });
-          } else {
-            await kv.delete(key);
-          }
-          return new Response(JSON.stringify({
-            puzzle: {
-              size: firstPuzzle.size,
-              cages: firstPuzzle.cages,
-              solution: firstPuzzle.solution
-            },
-            stats: {
-              algorithm: "FC+MRV",
-              // Keep same algorithm name for consistency
-              constraint_checks: 0,
-              assignments: 0,
-              completion_time: 0
-            }
-          }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          });
-        } else {
-          console.log(`Cache empty for ${key} (array exists but is empty)`);
-        }
-      } else {
-        console.log(`Cache miss for ${key} (key not found in KV)`);
+    const difficulty = difficultyStr === "easy" || difficultyStr === "medium" || difficultyStr === "hard" ? difficultyStr : size <= 4 ? "easy" : size <= 6 ? "medium" : "hard";
+    const isPoD = isPuzzleOfDay(size, difficulty);
+    if (isPoD) {
+      const podPuzzle = await getPuzzleOfDayFromKV(env);
+      if (podPuzzle) {
+        console.log(`PoD: served from KV`);
+        return new Response(JSON.stringify(podPuzzle), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
       }
-    } else {
-      console.log(`No KV namespace available for ${key}`);
+      console.log(`PoD: KV miss, generating new`);
     }
-    console.log(`Generating ${size}x${size} ${difficulty} puzzle on-demand (cache miss)`);
+    const dailyPuzzle = await getDailyPuzzleFromKV(env, size, difficulty);
+    if (dailyPuzzle) {
+      console.log(`getDailyPuzzle: hit KV for ${size}x${size} ${difficulty}`);
+      return new Response(JSON.stringify(dailyPuzzle), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+    console.log(`getDailyPuzzle: KV miss, generating ${size}x${size} ${difficulty} puzzle on-demand`);
     const seed = `${Date.now()}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);
@@ -863,7 +979,7 @@ async function handleGenerateBySize(request, env) {
       );
     }
     const cages = cliquesToCages(cliques);
-    const response = {
+    const generatedPuzzle = {
       puzzle: {
         size: puzzleSize,
         cages,
@@ -876,7 +992,18 @@ async function handleGenerateBySize(request, env) {
         completion_time: solutionResult.time
       }
     };
-    return new Response(JSON.stringify(response), {
+    try {
+      if (isPoD) {
+        await putPuzzleOfDayInKV(env, generatedPuzzle);
+        console.log(`PoD: generated new and stored in KV`);
+      } else {
+        await putDailyPuzzleInKV(env, size, difficulty, generatedPuzzle);
+        console.log(`getDailyPuzzle: generated new and stored in KV for ${size}x${size} ${difficulty}`);
+      }
+    } catch (kvError) {
+      console.error("Error storing puzzle in KV:", kvError);
+    }
+    return new Response(JSON.stringify(generatedPuzzle), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   } catch (error) {
@@ -930,7 +1057,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-Ld2w5C/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-nZDJSc/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -962,7 +1089,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-Ld2w5C/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-nZDJSc/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

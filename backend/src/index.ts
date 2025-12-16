@@ -4,6 +4,14 @@
  */
 
 import { generate, solve, cliquesToCages } from './kenken';
+import {
+  getDailyPuzzleFromKV,
+  putDailyPuzzleInKV,
+  getPuzzleOfDayFromKV,
+  putPuzzleOfDayInKV,
+  isPuzzleOfDay,
+  type Difficulty,
+} from './dailyPuzzles';
 
 // Environment interface for type safety
 interface Env {
@@ -454,14 +462,14 @@ async function handleDeletePuzzle(request: Request, env: Env): Promise<Response>
 }
 
 // POST /api/generate/[size]/[diff] - Cache-first puzzle endpoint
-// Checks KV cache first, then falls back to on-demand generation
+// Checks KV cache first (PoD or normal puzzle), then falls back to on-demand generation
 // Response format matches exactly what frontend expects
 async function handleGenerateBySize(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url);
     const pathParts = url.pathname.replace('/api/generate/', '').split('/');
     const size = parseInt(pathParts[0]);
-    const difficulty = pathParts[1] || 'medium';
+    const difficultyStr = pathParts[1] || 'medium';
 
     if (isNaN(size) || size < 3 || size > 9) {
       return new Response(
@@ -470,63 +478,38 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
       );
     }
 
-    // Compute today's KV key (UTC date to match cron job)
-    const today = new Date();
-    const utcYear = today.getUTCFullYear();
-    const utcMonth = String(today.getUTCMonth() + 1).padStart(2, '0');
-    const utcDay = String(today.getUTCDate()).padStart(2, '0');
-    const date = `${utcYear}-${utcMonth}-${utcDay}`;
-    const key = `puzzles:${size}x${size}:${difficulty}:${date}`;
+    // Normalize difficulty to match our type
+    const difficulty: Difficulty = 
+      difficultyStr === 'easy' || difficultyStr === 'medium' || difficultyStr === 'hard'
+        ? difficultyStr
+        : size <= 4 ? 'easy' : size <= 6 ? 'medium' : 'hard';
+
+    // Check if this is a Puzzle of the Day request
+    const isPoD = isPuzzleOfDay(size, difficulty);
     
-    // Try to read array of preloaded puzzles from KV
-    const kv = env.PUZZLES_KV || env.KV_BINDING;
-    if (kv) {
-      const cached = await kv.get(key);
-      if (cached) {
-        const puzzles = JSON.parse(cached) as any[];
-        
-        // If array is non-empty, pop/shift one puzzle out
-        if (puzzles && puzzles.length > 0) {
-          console.log(`Cache hit for ${key}, returning puzzle (${puzzles.length} remaining)`);
-          const firstPuzzle = puzzles.shift()!; // Remove first puzzle from array
-          const remainingPuzzles = puzzles;
-          
-          // Write the remaining puzzles back to KV
-          if (remainingPuzzles.length > 0) {
-            await kv.put(key, JSON.stringify(remainingPuzzles), { expirationTtl: 86400 });
-          } else {
-            // Array is now empty, delete the key
-            await kv.delete(key);
-          }
-          
-          // Return that puzzle in the exact same JSON format frontend expects
-          return new Response(JSON.stringify({
-            puzzle: {
-              size: firstPuzzle.size,
-              cages: firstPuzzle.cages,
-              solution: firstPuzzle.solution,
-            },
-            stats: {
-              algorithm: 'FC+MRV', // Keep same algorithm name for consistency
-              constraint_checks: 0,
-              assignments: 0,
-              completion_time: 0,
-            },
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        } else {
-          console.log(`Cache empty for ${key} (array exists but is empty)`);
-        }
-      } else {
-        console.log(`Cache miss for ${key} (key not found in KV)`);
+    if (isPoD) {
+      // Try to get Puzzle of the Day from KV first
+      const podPuzzle = await getPuzzleOfDayFromKV(env);
+      if (podPuzzle) {
+        console.log(`PoD: served from KV`);
+        return new Response(JSON.stringify(podPuzzle), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
-    } else {
-      console.log(`No KV namespace available for ${key}`);
+      console.log(`PoD: KV miss, generating new`);
     }
 
-    // If array is empty or key missing, call existing generator function
-    console.log(`Generating ${size}x${size} ${difficulty} puzzle on-demand (cache miss)`);
+    // Try to get daily puzzle from KV (for normal puzzles or PoD fallback)
+    const dailyPuzzle = await getDailyPuzzleFromKV(env, size, difficulty);
+    if (dailyPuzzle) {
+      console.log(`getDailyPuzzle: hit KV for ${size}x${size} ${difficulty}`);
+      return new Response(JSON.stringify(dailyPuzzle), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // KV miss - generate on-demand (lazy generation fallback)
+    console.log(`getDailyPuzzle: KV miss, generating ${size}x${size} ${difficulty} puzzle on-demand`);
     const seed = `${Date.now()}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);
@@ -540,8 +523,8 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
 
     const cages = cliquesToCages(cliques);
 
-    // Return the generated puzzle in the same JSON format
-    const response = {
+    // Format response to match frontend expectations
+    const generatedPuzzle = {
       puzzle: {
         size: puzzleSize,
         cages,
@@ -555,7 +538,21 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
       },
     };
 
-    return new Response(JSON.stringify(response), {
+    // Store in KV for future requests (lazy caching)
+    try {
+      if (isPoD) {
+        await putPuzzleOfDayInKV(env, generatedPuzzle);
+        console.log(`PoD: generated new and stored in KV`);
+      } else {
+        await putDailyPuzzleInKV(env, size, difficulty, generatedPuzzle);
+        console.log(`getDailyPuzzle: generated new and stored in KV for ${size}x${size} ${difficulty}`);
+      }
+    } catch (kvError) {
+      // Log but don't fail the request if KV write fails
+      console.error('Error storing puzzle in KV:', kvError);
+    }
+
+    return new Response(JSON.stringify(generatedPuzzle), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
