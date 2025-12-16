@@ -50,15 +50,22 @@ export default function ScoreModal({
     if (!puzzle || !board || board.length === 0) return null;
 
     const size = puzzle.size;
-    const gridStatus: boolean[][] = Array.from({ length: size }, (_, r) =>
-      Array.from({ length: size }, (_, c) => {
-        const val = board[r]?.[c];
-        if (!val || !puzzle.solution) {
-          return false; // missing or unknown
-        }
-        return puzzle.solution[r][c] === val;
-      }),
-    );
+    // gridStatus mapping: false = green (🟩), true = red (🟥)
+    // If puzzle was solved (not lost), show all green squares
+    // If lost, show correct cells as green (false) and incorrect/missing as red (true)
+    const gridStatus: boolean[][] = lost
+      ? Array.from({ length: size }, (_, r) =>
+          Array.from({ length: size }, (_, c) => {
+            const val = board[r]?.[c];
+            if (!val || !puzzle.solution) {
+              return true; // missing or unknown = red (🟥)
+            }
+            // If correct, return false (green 🟩), if incorrect return true (red 🟥)
+            return puzzle.solution[r][c] !== val;
+          }),
+        )
+      : // Puzzle solved - all green (all false)
+        Array.from({ length: size }, () => Array(size).fill(false));
 
     const completionTime = formatTime(timeElapsed);
     const shareData: ShareData = {

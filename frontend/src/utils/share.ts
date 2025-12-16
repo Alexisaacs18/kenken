@@ -6,7 +6,8 @@ export interface ShareData {
   completionTime: string;
   streak?: number;
   // gridStatus dimensions must match the puzzle size (e.g., 4x4, 6x6)
-  // true = incorrect/missing (🟥), false = correct/filled (🟩)
+  // false = green (🟩), true = red (🟥)
+  // When puzzle is solved, all values should be false (all green)
   gridStatus: boolean[][];
 }
 
