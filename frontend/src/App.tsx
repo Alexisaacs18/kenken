@@ -169,6 +169,17 @@ function App() {
   // Handle loading daily puzzle (restore if saved for today, otherwise generate new)
   const handleDailyPuzzle = async () => {
     const todayInfo = getTodayPuzzleInfo();
+    
+    // IMMEDIATELY save to localStorage so refresh always knows what to load
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(SESSION_KEY);
+      const sessions = raw ? JSON.parse(raw) as any : {};
+      sessions.lastMode = 'daily';
+      sessions.lastAttemptedSize = todayInfo.size;
+      // Don't set lastDifficulty for daily puzzles - that's only for practice
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+    }
+    
     setDailyPuzzleInfo(todayInfo);
     setIsDailyPuzzle(true);
     setSelectedDifficulty(null);
@@ -273,6 +284,16 @@ function App() {
 
   // Handle puzzle generation from side menu (practice mode)
   const handleDifficultySelect = async (size: number) => {
+    // IMMEDIATELY save to localStorage so refresh always knows what to load
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(SESSION_KEY);
+      const sessions = raw ? JSON.parse(raw) as any : {};
+      sessions.lastDifficulty = size;
+      sessions.lastAttemptedSize = size;
+      sessions.lastMode = 'practice';
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+    }
+    
     setSelectedDifficulty(size);
     setIsDailyPuzzle(false); // This is practice mode, not daily puzzle
     lastAttemptedSizeRef.current = size; // Track this as the last attempted size
@@ -468,27 +489,40 @@ function App() {
         console.error('[Mount] Error restoring session from storage:', error);
       }
 
-      // Fallback: Check lastAttemptedSizeRef first (persisted from localStorage or previous attempts)
-      // This ensures we don't default to 3x3 daily puzzle if user was trying a different size
-      // Also check lastDifficulty from localStorage
+      // Fallback: Check lastMode and lastDifficulty from localStorage - this is the source of truth
+      // This ensures we don't default to daily puzzle if user was trying a practice puzzle
       const raw = localStorage.getItem(SESSION_KEY);
       const sessions = raw ? JSON.parse(raw) as any : {};
+      const lastMode = sessions.lastMode;
       const lastDifficulty = sessions.lastDifficulty;
       const lastAttemptedSize = sessions.lastAttemptedSize;
       
-      // Priority: Use lastDifficulty if available, then lastAttemptedSize, then daily puzzle
-      if (lastDifficulty && lastDifficulty !== dailyPuzzleInfo.size) {
+      // Priority 1: If lastMode is 'practice' and lastDifficulty is set, load practice puzzle
+      // This is the most reliable indicator - user explicitly selected a practice difficulty
+      if (lastMode === 'practice' && lastDifficulty !== null && lastDifficulty !== undefined) {
+        console.log('[Mount] No saved session, but lastMode=practice indicates practice puzzle was attempted, loading:', lastDifficulty);
+        lastAttemptedSizeRef.current = lastDifficulty;
+        await handleDifficultySelect(lastDifficulty);
+      } 
+      // Priority 2: If lastDifficulty is set (even if lastMode isn't set), try practice puzzle
+      else if (lastDifficulty !== null && lastDifficulty !== undefined) {
         console.log('[Mount] No saved session, but lastDifficulty indicates practice puzzle was attempted, loading:', lastDifficulty);
         lastAttemptedSizeRef.current = lastDifficulty;
         await handleDifficultySelect(lastDifficulty);
-      } else if (lastAttemptedSize && lastAttemptedSize !== dailyPuzzleInfo.size) {
+      } 
+      // Priority 3: If lastAttemptedSize is set and different from daily, try practice puzzle
+      else if (lastAttemptedSize !== null && lastAttemptedSize !== undefined && lastAttemptedSize !== dailyPuzzleInfo.size) {
         console.log('[Mount] No saved session, but lastAttemptedSize indicates practice puzzle was attempted, loading:', lastAttemptedSize);
         lastAttemptedSizeRef.current = lastAttemptedSize;
         await handleDifficultySelect(lastAttemptedSize);
-      } else if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
+      } 
+      // Priority 4: If lastAttemptedSizeRef is set and different from daily, try practice puzzle
+      else if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
         console.log('[Mount] No saved session, but lastAttemptedSizeRef indicates practice puzzle was attempted, loading:', lastAttemptedSizeRef.current);
         await handleDifficultySelect(lastAttemptedSizeRef.current);
-      } else {
+      } 
+      // Priority 5: Otherwise, load daily puzzle
+      else {
         console.log('[Mount] No saved session found, loading daily puzzle...');
         await handleDailyPuzzle();
       }
@@ -722,6 +756,13 @@ function App() {
       setLoading(true);
       
       try {
+        // Get lastDifficulty and lastMode from localStorage - this is the source of truth
+        const raw = localStorage.getItem(SESSION_KEY);
+        const sessions = raw ? JSON.parse(raw) as any : {};
+        const lastDifficulty = sessions.lastDifficulty;
+        const lastMode = sessions.lastMode;
+        const lastAttemptedSize = sessions.lastAttemptedSize;
+        
         // Log current state for debugging
         console.log(`[Refresh] State check:`, {
           selectedDifficulty,
@@ -730,30 +771,31 @@ function App() {
           targetSize,
           lastAttemptedSize: lastAttemptedSizeRef.current,
           dailyPuzzleSize: dailyPuzzleInfo.size,
+          lastDifficulty,
+          lastMode,
+          lastAttemptedSize,
         });
         
-        // Get lastDifficulty and lastAttemptedSize from localStorage as additional checks
-        const raw = localStorage.getItem(SESSION_KEY);
-        const sessions = raw ? JSON.parse(raw) as any : {};
-        const lastDifficulty = sessions.lastDifficulty;
-        const lastAttemptedSize = sessions.lastAttemptedSize;
-        
-        // Priority 1: If selectedDifficulty is set, always use it (practice mode)
-        // This handles the case where a practice puzzle failed to load
-        if (selectedDifficulty !== null) {
+        // Priority 1: If lastMode is 'practice' and lastDifficulty is set, use it
+        // This is the most reliable indicator of what puzzle was attempted
+        if (lastMode === 'practice' && lastDifficulty !== null && lastDifficulty !== undefined) {
+          console.log(`[Refresh] Using lastDifficulty from localStorage (practice mode): ${lastDifficulty}x${lastDifficulty}`);
+          lastAttemptedSizeRef.current = lastDifficulty;
+          setSelectedDifficulty(lastDifficulty);
+          setIsDailyPuzzle(false);
+          await handleDifficultySelect(lastDifficulty);
+        }
+        // Priority 2: If selectedDifficulty is set, use it (practice mode)
+        else if (selectedDifficulty !== null) {
           console.log(`[Refresh] Using selectedDifficulty: ${selectedDifficulty}x${selectedDifficulty}`);
           await handleDifficultySelect(selectedDifficulty);
         } 
-        // Priority 2: If lastDifficulty from localStorage is set and different from daily, use it
-        else if (lastDifficulty !== null && lastDifficulty !== undefined && lastDifficulty !== dailyPuzzleInfo.size) {
-          console.log(`[Refresh] Using lastDifficulty from localStorage: ${lastDifficulty}x${lastDifficulty}`);
-          lastAttemptedSizeRef.current = lastDifficulty;
-          await handleDifficultySelect(lastDifficulty);
-        }
         // Priority 3: If lastAttemptedSize from localStorage is set and different from daily, use it
         else if (lastAttemptedSize !== null && lastAttemptedSize !== undefined && lastAttemptedSize !== dailyPuzzleInfo.size) {
           console.log(`[Refresh] Using lastAttemptedSize from localStorage: ${lastAttemptedSize}x${lastAttemptedSize}`);
           lastAttemptedSizeRef.current = lastAttemptedSize;
+          setSelectedDifficulty(lastAttemptedSize);
+          setIsDailyPuzzle(false);
           await handleDifficultySelect(lastAttemptedSize);
         }
         // Priority 4: If lastAttemptedSizeRef is set and different from daily, use it
