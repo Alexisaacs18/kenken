@@ -64,6 +64,10 @@ export async function generatePuzzle(
   try {
     // Use the new endpoint format with size and difficulty
     const difficulty = getDifficultyFromSize(size);
+    const url = `${API_BASE_URL}/api/generate/${size}/${difficulty}`;
+    
+    console.log(`[API] Fetching puzzle from: ${url}`);
+    console.log(`[API] API_BASE_URL: "${API_BASE_URL}", PROD: ${import.meta.env.PROD}`);
     
     // For large puzzles, use a longer timeout (up to 30 seconds)
     const timeout = size >= 7 ? 30000 : 15000;
@@ -71,7 +75,7 @@ export async function generatePuzzle(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
-    const response = await fetch(`${API_BASE_URL}/api/generate/${size}/${difficulty}`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -81,6 +85,8 @@ export async function generatePuzzle(
     });
     
     clearTimeout(timeoutId);
+    
+    console.log(`[API] Response status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
       const errorText = await response.text();

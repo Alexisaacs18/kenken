@@ -222,7 +222,9 @@ function App() {
       }
 
       // No saved session for today – generate a new daily puzzle
+      console.log(`[Daily Puzzle] Loading ${todayInfo.size}x${todayInfo.size} puzzle for ${todayInfo.date}`);
       const response = await generatePuzzle(todayInfo.size, algorithm, todayInfo.seed);
+      console.log(`[Daily Puzzle] Received puzzle:`, response.puzzle ? 'success' : 'failed');
       // Generate unique puzzle key for forced remounting
       const puzzleId = `daily-${todayInfo.date}-${Date.now()}`;
       setPuzzleKey(puzzleId);
@@ -246,11 +248,19 @@ function App() {
       setShowSideMenu(false);
       setLastAutoCheckedBoard(''); // Reset auto-check tracking
     } catch (error) {
-      console.error('Error loading daily puzzle:', error);
+      console.error('[Daily Puzzle] Error loading daily puzzle:', error);
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'Failed to load daily puzzle. Make sure the backend is running.';
+      console.error('[Daily Puzzle] Error details:', {
+        message: errorMessage,
+        size: todayInfo.size,
+        date: todayInfo.date,
+        error: error,
+      });
       alert(errorMessage);
+      // Don't set loading to false on error - keep it showing so user knows something went wrong
+      // setLoading(false);
     } finally {
       setLoading(false);
     }
@@ -438,10 +448,11 @@ function App() {
           }
         }
       } catch (error) {
-        console.error('Error restoring session from storage:', error);
+        console.error('[Mount] Error restoring session from storage:', error);
       }
 
       // Fallback: load today's daily puzzle
+      console.log('[Mount] No saved session found, loading daily puzzle...');
       await handleDailyPuzzle();
     };
 
