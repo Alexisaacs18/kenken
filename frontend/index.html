@@ -13,7 +13,31 @@
     
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Puzzalo Games - Daily KenKen Puzzles</title>
+    
+    <!-- Version check script - runs before React to detect stale cached versions -->
+    <!-- NOTE: This only uses 'kenken_app_version' key - does NOT affect puzzle sessions -->
+    <script>
+      (function() {
+        var CURRENT_VERSION = '{{APP_VERSION}}';
+        var VERSION_KEY = 'kenken_app_version'; // Separate key - never conflicts with session data
+        var storedVersion = localStorage.getItem(VERSION_KEY);
+        
+        // If versions don't match, force a hard reload to bypass cache
+        // localStorage persists across reloads, so puzzle sessions remain intact
+        if (storedVersion && storedVersion !== CURRENT_VERSION) {
+          console.log('[Version Check] Version mismatch detected. Forcing reload...');
+          localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
+          window.location.reload();
+        } else if (!storedVersion) {
+          // First load - store the version
+          localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
+        }
+      })();
+    </script>
     
     <meta name="description" content="Play the Daily KenKen challenge on Puzzalo.com! Switch between various difficulties, sizes, and daily puzzles. Free and fun brain training!">
     
