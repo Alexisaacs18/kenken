@@ -470,7 +470,22 @@ function App() {
 
       // Fallback: Check lastAttemptedSizeRef first (persisted from localStorage or previous attempts)
       // This ensures we don't default to 3x3 daily puzzle if user was trying a different size
-      if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
+      // Also check lastDifficulty from localStorage
+      const raw = localStorage.getItem(SESSION_KEY);
+      const sessions = raw ? JSON.parse(raw) as any : {};
+      const lastDifficulty = sessions.lastDifficulty;
+      const lastAttemptedSize = sessions.lastAttemptedSize;
+      
+      // Priority: Use lastDifficulty if available, then lastAttemptedSize, then daily puzzle
+      if (lastDifficulty && lastDifficulty !== dailyPuzzleInfo.size) {
+        console.log('[Mount] No saved session, but lastDifficulty indicates practice puzzle was attempted, loading:', lastDifficulty);
+        lastAttemptedSizeRef.current = lastDifficulty;
+        await handleDifficultySelect(lastDifficulty);
+      } else if (lastAttemptedSize && lastAttemptedSize !== dailyPuzzleInfo.size) {
+        console.log('[Mount] No saved session, but lastAttemptedSize indicates practice puzzle was attempted, loading:', lastAttemptedSize);
+        lastAttemptedSizeRef.current = lastAttemptedSize;
+        await handleDifficultySelect(lastAttemptedSize);
+      } else if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
         console.log('[Mount] No saved session, but lastAttemptedSizeRef indicates practice puzzle was attempted, loading:', lastAttemptedSizeRef.current);
         await handleDifficultySelect(lastAttemptedSizeRef.current);
       } else {
@@ -717,23 +732,41 @@ function App() {
           dailyPuzzleSize: dailyPuzzleInfo.size,
         });
         
+        // Get lastDifficulty and lastAttemptedSize from localStorage as additional checks
+        const raw = localStorage.getItem(SESSION_KEY);
+        const sessions = raw ? JSON.parse(raw) as any : {};
+        const lastDifficulty = sessions.lastDifficulty;
+        const lastAttemptedSize = sessions.lastAttemptedSize;
+        
         // Priority 1: If selectedDifficulty is set, always use it (practice mode)
         // This handles the case where a practice puzzle failed to load
         if (selectedDifficulty !== null) {
           console.log(`[Refresh] Using selectedDifficulty: ${selectedDifficulty}x${selectedDifficulty}`);
           await handleDifficultySelect(selectedDifficulty);
         } 
-        // Priority 2: If lastAttemptedSizeRef is set and different from daily, use it
+        // Priority 2: If lastDifficulty from localStorage is set and different from daily, use it
+        else if (lastDifficulty !== null && lastDifficulty !== undefined && lastDifficulty !== dailyPuzzleInfo.size) {
+          console.log(`[Refresh] Using lastDifficulty from localStorage: ${lastDifficulty}x${lastDifficulty}`);
+          lastAttemptedSizeRef.current = lastDifficulty;
+          await handleDifficultySelect(lastDifficulty);
+        }
+        // Priority 3: If lastAttemptedSize from localStorage is set and different from daily, use it
+        else if (lastAttemptedSize !== null && lastAttemptedSize !== undefined && lastAttemptedSize !== dailyPuzzleInfo.size) {
+          console.log(`[Refresh] Using lastAttemptedSize from localStorage: ${lastAttemptedSize}x${lastAttemptedSize}`);
+          lastAttemptedSizeRef.current = lastAttemptedSize;
+          await handleDifficultySelect(lastAttemptedSize);
+        }
+        // Priority 4: If lastAttemptedSizeRef is set and different from daily, use it
         else if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
           console.log(`[Refresh] Using lastAttemptedSizeRef: ${lastAttemptedSizeRef.current}x${lastAttemptedSizeRef.current}`);
           await handleDifficultySelect(lastAttemptedSizeRef.current);
         }
-        // Priority 3: If targetSize is different from daily puzzle size, it's likely a practice puzzle
+        // Priority 5: If targetSize is different from daily puzzle size, it's likely a practice puzzle
         else if (targetSize && targetSize !== dailyPuzzleInfo.size) {
           console.log(`[Refresh] Using targetSize (differs from daily): ${targetSize}x${targetSize}`);
           await handleDifficultySelect(targetSize);
         }
-        // Priority 4: Otherwise, load daily puzzle
+        // Priority 6: Otherwise, load daily puzzle
         else {
           console.log(`[Refresh] Loading daily puzzle: ${dailyPuzzleInfo.size}x${dailyPuzzleInfo.size}`);
           await handleDailyPuzzle();
