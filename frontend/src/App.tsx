@@ -263,7 +263,7 @@ function App() {
       });
       // Keep lastAttemptedSizeRef set to today's size so refresh knows what to retry
       lastAttemptedSizeRef.current = todayInfo.size;
-      alert(errorMessage);
+      // No alert - just let the loading state show the failed to load screen
       // Don't set loading to false on error - keep it showing so user knows something went wrong
       // setLoading(false);
     } finally {
@@ -365,7 +365,7 @@ function App() {
       lastAttemptedSizeRef.current = size;
       // Don't clear selectedDifficulty on error - keep it so refresh knows what to retry
       // setSelectedDifficulty(null);
-      alert(errorMessage);
+      // No alert - just let the loading state show the failed to load screen
     } finally {
       // Reset loading state last to ensure all state is set
       setLoading(false);
