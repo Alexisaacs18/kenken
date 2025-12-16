@@ -355,7 +355,8 @@ function App() {
         ? error.message 
         : 'Failed to generate puzzle. Make sure the backend is running.';
       alert(errorMessage);
-      setSelectedDifficulty(null);
+      // Don't clear selectedDifficulty on error - keep it so refresh knows what to retry
+      // setSelectedDifficulty(null);
     } finally {
       // Reset loading state last to ensure all state is set
       setLoading(false);
@@ -618,23 +619,29 @@ function App() {
   };
 
   // Handle refresh puzzle - resets current puzzle to blank state (same puzzle, fresh start)
-  // If no puzzle is loaded, clears cache and retries loading
+  // If no puzzle is loaded, clears cache and retries loading the SAME puzzle that was attempted
   const handleRefreshPuzzle = async () => {
+    // Determine what puzzle we're trying to refresh
+    // Priority: 1) Current puzzle size, 2) selectedDifficulty, 3) dailyPuzzleInfo, 4) daily puzzle
+    const targetSize = puzzle?.size || selectedDifficulty || dailyPuzzleInfo.size;
+    const wasPracticeMode = selectedDifficulty !== null && !isDailyPuzzle;
+    
     // Clear localStorage cache
     if (typeof window !== 'undefined') {
       const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
         try {
           const sessions = JSON.parse(raw);
-          if (isDailyPuzzle) {
+          if (isDailyPuzzle && !wasPracticeMode) {
             const todayInfo = getTodayPuzzleInfo();
             if (sessions.daily) {
               delete sessions.daily[todayInfo.date];
               localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
             }
-          } else if (selectedDifficulty) {
-            if (sessions.practice) {
-              delete sessions.practice[selectedDifficulty];
+          } else if (selectedDifficulty || wasPracticeMode) {
+            const sizeToClear = selectedDifficulty || targetSize;
+            if (sessions.practice && sizeToClear) {
+              delete sessions.practice[sizeToClear];
               localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
             }
           }
@@ -672,19 +679,30 @@ function App() {
       setLastAutoCheckedBoard('');
       setShowScoreModal(false);
     } else {
-      // No puzzle loaded - retry loading
+      // No puzzle loaded - retry loading the SAME puzzle that was attempted
       resetAllGameState();
       setShowScoreModal(false);
       setLoading(true);
       
       try {
-        if (isDailyPuzzle) {
+        // If we have a selectedDifficulty, use that (practice mode)
+        if (selectedDifficulty || (wasPracticeMode && targetSize)) {
+          const sizeToLoad = selectedDifficulty || targetSize;
+          console.log(`[Refresh] Retrying practice puzzle: ${sizeToLoad}x${sizeToLoad}`);
+          await handleDifficultySelect(sizeToLoad);
+        } else if (isDailyPuzzle || !wasPracticeMode) {
+          // Daily puzzle mode
+          console.log(`[Refresh] Retrying daily puzzle: ${dailyPuzzleInfo.size}x${dailyPuzzleInfo.size}`);
           await handleDailyPuzzle();
-        } else if (selectedDifficulty) {
-          await handleDifficultySelect(selectedDifficulty);
         } else {
-          // Default to daily puzzle
-          await handleDailyPuzzle();
+          // Fallback: try to load based on targetSize
+          if (targetSize && targetSize !== dailyPuzzleInfo.size) {
+            console.log(`[Refresh] Fallback: loading practice puzzle ${targetSize}x${targetSize}`);
+            await handleDifficultySelect(targetSize);
+          } else {
+            console.log(`[Refresh] Fallback: loading daily puzzle`);
+            await handleDailyPuzzle();
+          }
         }
       } catch (error) {
         console.error('[Refresh] Error reloading puzzle:', error);
