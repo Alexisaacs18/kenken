@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// .wrangler/tmp/bundle-63wEMu/strip-cf-connecting-ip-header.js
+// .wrangler/tmp/bundle-T1jP3u/strip-cf-connecting-ip-header.js
 function stripCfConnectingIPHeader(input, init) {
   const request = new Request(input, init);
   request.headers.delete("CF-Connecting-IP");
@@ -434,135 +434,6 @@ function isPuzzleOfDay(size, difficulty) {
 }
 __name(isPuzzleOfDay, "isPuzzleOfDay");
 
-// src/cron.ts
-async function generatePuzzleForCache(size, difficulty, seed) {
-  try {
-    const [puzzleSize, cliques] = generate(size, seed);
-    const solutionResult = solve(puzzleSize, cliques);
-    if (!solutionResult) {
-      console.error(`Failed to solve ${size}x${size} ${difficulty} puzzle`);
-      return null;
-    }
-    const cages = cliquesToCages(cliques);
-    return {
-      puzzle: {
-        size: puzzleSize,
-        cages,
-        solution: solutionResult.solution
-      },
-      stats: {
-        algorithm: "FC+MRV",
-        constraint_checks: solutionResult.checks,
-        assignments: solutionResult.assigns,
-        completion_time: solutionResult.time
-      }
-    };
-  } catch (error) {
-    console.error(`Error generating ${size}x${size} ${difficulty} puzzle:`, error);
-    return null;
-  }
-}
-__name(generatePuzzleForCache, "generatePuzzleForCache");
-async function preloadSinglePuzzle(size, difficulty, date, env) {
-  const kv = env.PUZZLES_KV || env.KV_BINDING;
-  if (!kv) {
-    console.error("No KV namespace available");
-    return false;
-  }
-  const key = puzzleKey(size, difficulty, date);
-  const existing = await kv.get(key);
-  if (existing) {
-    console.log(`Puzzle already exists for ${key}, skipping generation`);
-    return true;
-  }
-  console.log(`Generating puzzle for ${key}...`);
-  const seed = `${date}-${size}-${difficulty}`;
-  const puzzle = await generatePuzzleForCache(size, difficulty, seed);
-  if (!puzzle) {
-    console.error(`Failed to generate puzzle for ${key}`);
-    return false;
-  }
-  await putDailyPuzzleInKV(env, size, difficulty, puzzle);
-  console.log(`Stored puzzle for ${key}`);
-  return true;
-}
-__name(preloadSinglePuzzle, "preloadSinglePuzzle");
-async function preloadPuzzleOfDay(env) {
-  const kv = env.PUZZLES_KV || env.KV_BINDING;
-  if (!kv) {
-    console.error("No KV namespace available");
-    return false;
-  }
-  const date = todayUtcDate();
-  const key = puzzleOfDayKey(date);
-  const existing = await kv.get(key);
-  if (existing) {
-    console.log(`Puzzle of the Day already exists for ${key}, skipping generation`);
-    return true;
-  }
-  const today = /* @__PURE__ */ new Date();
-  const dayOfWeek = today.getUTCDay();
-  const dayMapping = {
-    1: { size: 3, difficulty: "easy" },
-    // Monday - Beginner
-    2: { size: 4, difficulty: "easy" },
-    // Tuesday - Easy
-    3: { size: 5, difficulty: "medium" },
-    // Wednesday - Medium
-    4: { size: 6, difficulty: "medium" },
-    // Thursday - Intermediate
-    5: { size: 7, difficulty: "hard" },
-    // Friday - Challenging
-    6: { size: 8, difficulty: "hard" },
-    // Saturday - Hard
-    0: { size: 9, difficulty: "hard" }
-    // Sunday - Expert
-  };
-  const pod = dayMapping[dayOfWeek];
-  if (!pod) {
-    console.error(`Invalid day of week: ${dayOfWeek}`);
-    return false;
-  }
-  console.log(`Generating Puzzle of the Day for ${date} (${pod.size}x${pod.size} ${pod.difficulty})...`);
-  const seed = `${date}-pod-${pod.size}-${pod.difficulty}`;
-  const puzzle = await generatePuzzleForCache(pod.size, pod.difficulty, seed);
-  if (!puzzle) {
-    console.error(`Failed to generate Puzzle of the Day for ${key}`);
-    return false;
-  }
-  await putPuzzleOfDayInKV(env, puzzle);
-  console.log(`Stored Puzzle of the Day for ${key}`);
-  return true;
-}
-__name(preloadPuzzleOfDay, "preloadPuzzleOfDay");
-async function scheduled(event, env, ctx) {
-  const kv = env.PUZZLES_KV || env.KV_BINDING;
-  if (!kv) {
-    console.error("No KV namespace available");
-    return;
-  }
-  const date = todayUtcDate();
-  const sizes = [3, 4, 5, 6, 7, 8, 9];
-  const difficulties = ["easy", "medium", "hard"];
-  console.log(`Starting daily puzzle preload for ${date}...`);
-  for (const size of sizes) {
-    for (const difficulty of difficulties) {
-      try {
-        await preloadSinglePuzzle(size, difficulty, date, env);
-      } catch (error) {
-        console.error(`Error preloading ${size}x${size} ${difficulty}:`, error);
-      }
-    }
-  }
-  try {
-    await preloadPuzzleOfDay(env);
-  } catch (error) {
-    console.error("Error preloading Puzzle of the Day:", error);
-  }
-  console.log(`Daily puzzle preload completed for ${date}`);
-}
-__name(scheduled, "scheduled");
-
 // src/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -608,6 +479,8 @@ var src_default = {
       return new Response(JSON.stringify({ status: "ok", message: "API Worker is running" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
+    } else if (path === "/api/clear-cache" && method === "POST") {
+      return handleClearCache(request, env);
     } else if (path === "/" && method === "GET") {
       return new Response(JSON.stringify({
         message: "KenKen API is running",
@@ -950,6 +823,11 @@ async function handleGenerateBySize(request, env) {
       );
     }
     const difficulty = difficultyStr === "easy" || difficultyStr === "medium" || difficultyStr === "hard" ? difficultyStr : size <= 4 ? "easy" : size <= 6 ? "medium" : "hard";
+    const today = /* @__PURE__ */ new Date();
+    const utcYear = today.getUTCFullYear();
+    const utcMonth = String(today.getUTCMonth() + 1).padStart(2, "0");
+    const utcDay = String(today.getUTCDate()).padStart(2, "0");
+    const dateStr = `${utcYear}-${utcMonth}-${utcDay}`;
     const isPoD = isPuzzleOfDay(size, difficulty);
     if (isPoD) {
       const podPuzzle = await getPuzzleOfDayFromKV(env);
@@ -959,7 +837,7 @@ async function handleGenerateBySize(request, env) {
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
-      console.log(`PoD: KV miss, generating new`);
+      console.log(`PoD: KV miss, generating new with date seed`);
     }
     const dailyPuzzle = await getDailyPuzzleFromKV(env, size, difficulty);
     if (dailyPuzzle) {
@@ -968,8 +846,47 @@ async function handleGenerateBySize(request, env) {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
-    console.log(`getDailyPuzzle: KV miss, generating ${size}x${size} ${difficulty} puzzle on-demand`);
-    const seed = `${Date.now()}-${size}-${difficulty}`;
+    if (size >= 7) {
+      const db = env.PUZZLES_DB || env.DB;
+      if (db) {
+        try {
+          const difficultyLabel = getDifficultyFromSize(size);
+          const result = await db.prepare(
+            "SELECT data FROM puzzles WHERE size = ? AND difficulty = ? LIMIT 1"
+          ).bind(size, difficultyLabel).first();
+          if (result && result.data) {
+            const puzzleData = JSON.parse(result.data);
+            console.log(`getDailyPuzzle: hit D1 for ${size}x${size} ${difficultyLabel}`);
+            const kv = env.PUZZLES_KV || env.KV_BINDING;
+            if (kv) {
+              try {
+                await putDailyPuzzleInKV(env, size, difficulty, puzzleData);
+              } catch (kvError) {
+                console.error("Error storing D1 puzzle in KV:", kvError);
+              }
+            }
+            return new Response(JSON.stringify({
+              puzzle: puzzleData.puzzle,
+              stats: puzzleData.stats || {
+                algorithm: "FC+MRV",
+                constraint_checks: 0,
+                assignments: 0,
+                completion_time: 0
+              }
+            }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" }
+            });
+          } else {
+            console.log(`getDailyPuzzle: D1 miss for ${size}x${size} ${difficultyLabel}, will try generation`);
+          }
+        } catch (dbError) {
+          console.error("Error querying D1:", dbError);
+        }
+      }
+      console.log(`getDailyPuzzle: attempting to generate ${size}x${size} ${difficulty} (may take a while)`);
+    }
+    console.log(`getDailyPuzzle: KV miss, generating ${size}x${size} ${difficulty} puzzle on-demand with date seed`);
+    const seed = `${dateStr}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);
     if (!solutionResult) {
@@ -1015,6 +932,56 @@ async function handleGenerateBySize(request, env) {
   }
 }
 __name(handleGenerateBySize, "handleGenerateBySize");
+async function handleClearCache(request, env) {
+  try {
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: "KV namespace not available" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const date = todayUtcDate();
+    const sizes = [3, 4, 5, 6, 7, 8, 9];
+    const difficulties = ["easy", "medium", "hard"];
+    let cleared = 0;
+    const errors = [];
+    for (const size of sizes) {
+      for (const difficulty of difficulties) {
+        try {
+          const key = puzzleKey(size, difficulty, date);
+          await kv.delete(key);
+          cleared++;
+        } catch (error) {
+          errors.push(`Failed to delete puzzle:${size}x${size}:${difficulty}:${date}`);
+        }
+      }
+    }
+    try {
+      const podKey = puzzleOfDayKey(date);
+      await kv.delete(podKey);
+      cleared++;
+    } catch (error) {
+      errors.push(`Failed to delete PoD:${date}`);
+    }
+    return new Response(
+      JSON.stringify({
+        success: true,
+        cleared,
+        errors: errors.length > 0 ? errors : void 0,
+        message: `Cleared ${cleared} cache entries for ${date}`
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error clearing cache:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+}
+__name(handleClearCache, "handleClearCache");
 
 // node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts
 var drainBody = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx) => {
@@ -1057,7 +1024,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-63wEMu/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-T1jP3u/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -1089,7 +1056,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-63wEMu/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-T1jP3u/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;
@@ -1185,7 +1152,6 @@ if (typeof middleware_insertion_facade_default === "object") {
 var middleware_loader_entry_default = WRAPPED_ENTRY;
 export {
   __INTERNAL_WRANGLER_MIDDLEWARE__,
-  middleware_loader_entry_default as default,
-  scheduled
+  middleware_loader_entry_default as default
 };
 //# sourceMappingURL=index.js.map

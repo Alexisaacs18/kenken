@@ -5,9 +5,10 @@ name = "kenken"
 main = "src/index.ts"
 compatibility_date = "2025-12-14"
 
-# Cron trigger for daily puzzle preloading (runs at 00:05 UTC daily)
-[triggers]
-crons = ["0 2 * * *"]
+# Cron trigger removed - using lazy generation with date-based seeds instead
+# This ensures same puzzle per day without needing a cron job
+# [triggers]
+# crons = []
 
 # KV namespace for job queue and sessions
 [[kv_namespaces]]

@@ -10,6 +10,9 @@ import {
   getPuzzleOfDayFromKV,
   putPuzzleOfDayInKV,
   isPuzzleOfDay,
+  todayUtcDate,
+  puzzleKey,
+  puzzleOfDayKey,
   type Difficulty,
 } from './dailyPuzzles';
 
@@ -42,8 +45,8 @@ function getDifficultyFromSize(size: number): string {
   return difficultyMap[size] || `Size${size}`;
 }
 
-// Export cron handler
-export { scheduled } from './cron';
+// Cron handler removed - using lazy generation with date-based seeds instead
+// export { scheduled } from './cron';
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -75,6 +78,8 @@ export default {
       return new Response(JSON.stringify({ status: 'ok', message: 'API Worker is running' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    } else if (path === '/api/clear-cache' && method === 'POST') {
+      return handleClearCache(request, env);
     } else if (path === '/' && method === 'GET') {
       return new Response(JSON.stringify({ 
         message: 'KenKen API is running', 
@@ -484,6 +489,13 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
         ? difficultyStr
         : size <= 4 ? 'easy' : size <= 6 ? 'medium' : 'hard';
 
+    // Use today's date as seed for deterministic daily puzzles (like the old approach)
+    const today = new Date();
+    const utcYear = today.getUTCFullYear();
+    const utcMonth = String(today.getUTCMonth() + 1).padStart(2, '0');
+    const utcDay = String(today.getUTCDate()).padStart(2, '0');
+    const dateStr = `${utcYear}-${utcMonth}-${utcDay}`;
+    
     // Check if this is a Puzzle of the Day request
     const isPoD = isPuzzleOfDay(size, difficulty);
     
@@ -496,7 +508,7 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      console.log(`PoD: KV miss, generating new`);
+      console.log(`PoD: KV miss, generating new with date seed`);
     }
 
     // Try to get daily puzzle from KV (for normal puzzles or PoD fallback)
@@ -508,9 +520,60 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
       });
     }
 
-    // KV miss - generate on-demand (lazy generation fallback)
-    console.log(`getDailyPuzzle: KV miss, generating ${size}x${size} ${difficulty} puzzle on-demand`);
-    const seed = `${Date.now()}-${size}-${difficulty}`;
+    // For large puzzles (7x7-9x9), check D1 database first (to avoid timeouts)
+    if (size >= 7) {
+      const db = env.PUZZLES_DB || env.DB;
+      if (db) {
+        try {
+          // D1 uses difficulty labels like "Challenging", "Hard", "Expert"
+          const difficultyLabel = getDifficultyFromSize(size);
+          const result = await db.prepare(
+            'SELECT data FROM puzzles WHERE size = ? AND difficulty = ? LIMIT 1'
+          ).bind(size, difficultyLabel).first<{ data: string }>();
+
+          if (result && result.data) {
+            const puzzleData = JSON.parse(result.data);
+            console.log(`getDailyPuzzle: hit D1 for ${size}x${size} ${difficultyLabel}`);
+            
+            // Store in KV for faster future access
+            const kv = env.PUZZLES_KV || env.KV_BINDING;
+            if (kv) {
+              try {
+                await putDailyPuzzleInKV(env, size, difficulty, puzzleData);
+              } catch (kvError) {
+                console.error('Error storing D1 puzzle in KV:', kvError);
+              }
+            }
+
+            return new Response(JSON.stringify({
+              puzzle: puzzleData.puzzle,
+              stats: puzzleData.stats || {
+                algorithm: 'FC+MRV',
+                constraint_checks: 0,
+                assignments: 0,
+                completion_time: 0,
+              },
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          } else {
+            console.log(`getDailyPuzzle: D1 miss for ${size}x${size} ${difficultyLabel}, will try generation`);
+          }
+        } catch (dbError) {
+          console.error('Error querying D1:', dbError);
+          // Fall through to generation
+        }
+      }
+      
+      // If D1 doesn't have it, try generating anyway (may be slow but should work)
+      // Note: Large puzzles may timeout in Cloudflare Workers, but we'll try
+      console.log(`getDailyPuzzle: attempting to generate ${size}x${size} ${difficulty} (may take a while)`);
+    }
+
+    // For smaller puzzles (3x3-6x6), generate on-demand using date as seed (deterministic like before)
+    console.log(`getDailyPuzzle: KV miss, generating ${size}x${size} ${difficulty} puzzle on-demand with date seed`);
+    // Use date as seed for deterministic generation (same date = same puzzle)
+    const seed = `${dateStr}-${size}-${difficulty}`;
     const [puzzleSize, cliques] = generate(size, seed);
     const solutionResult = solve(puzzleSize, cliques);
 
@@ -557,6 +620,64 @@ async function handleGenerateBySize(request: Request, env: Env): Promise<Respons
     });
   } catch (error) {
     console.error('Error generating puzzle by size:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+// POST /api/clear-cache - Clear all puzzle caches for today (for testing)
+async function handleClearCache(request: Request, env: Env): Promise<Response> {
+  try {
+    const kv = env.PUZZLES_KV || env.KV_BINDING;
+    if (!kv) {
+      return new Response(
+        JSON.stringify({ error: 'KV namespace not available' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const date = todayUtcDate();
+    const sizes = [3, 4, 5, 6, 7, 8, 9];
+    const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
+    
+    let cleared = 0;
+    const errors: string[] = [];
+
+    // Clear all daily puzzle keys for today
+    for (const size of sizes) {
+      for (const difficulty of difficulties) {
+        try {
+          const key = puzzleKey(size, difficulty, date);
+          await kv.delete(key);
+          cleared++;
+        } catch (error) {
+          errors.push(`Failed to delete puzzle:${size}x${size}:${difficulty}:${date}`);
+        }
+      }
+    }
+
+    // Clear Puzzle of the Day for today
+    try {
+      const podKey = puzzleOfDayKey(date);
+      await kv.delete(podKey);
+      cleared++;
+    } catch (error) {
+      errors.push(`Failed to delete PoD:${date}`);
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        cleared,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `Cleared ${cleared} cache entries for ${date}`,
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Error clearing cache:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

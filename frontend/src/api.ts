@@ -64,13 +64,23 @@ export async function generatePuzzle(
   try {
     // Use the new endpoint format with size and difficulty
     const difficulty = getDifficultyFromSize(size);
+    
+    // For large puzzles, use a longer timeout (up to 30 seconds)
+    const timeout = size >= 7 ? 30000 : 15000;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
     const response = await fetch(`${API_BASE_URL}/api/generate/${size}/${difficulty}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       // Note: seed is ignored for now, but endpoint may support it in the future
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -94,6 +104,9 @@ export async function generatePuzzle(
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error(`Cannot connect to backend at ${API_BASE_URL}. Make sure the backend is running.`);
+    }
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Puzzle generation timed out. Large puzzles (${size}x${size}) may take longer. Please try again.`);
     }
     throw error;
   }
