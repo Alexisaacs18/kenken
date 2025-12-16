@@ -215,6 +215,7 @@ function App() {
             const updated = {
               ...(sessions || {}),
               lastMode: 'daily',
+              lastAttemptedSize: todayInfo.size, // Persist daily puzzle size
             };
             localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
             setLoading(false);
@@ -320,6 +321,7 @@ function App() {
               ...(sessions || {}),
               lastMode: 'practice',
               lastDifficulty: size,
+              lastAttemptedSize: size, // Persist practice puzzle size
             };
             localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
             setLoading(false);
@@ -382,6 +384,11 @@ function App() {
           const sessions = JSON.parse(raw) as any;
           const todayInfo = getTodayPuzzleInfo();
 
+          // Restore lastAttemptedSizeRef from localStorage if available
+          if (sessions.lastAttemptedSize) {
+            lastAttemptedSizeRef.current = sessions.lastAttemptedSize;
+          }
+
           // Check for daily puzzle first
           const dailySessions = (sessions && sessions.daily) || {};
           const dailySaved = dailySessions[todayInfo.date];
@@ -413,6 +420,7 @@ function App() {
             setSelectedDifficulty(null);
             setHistory(dailySaved.history ? JSON.parse(JSON.stringify(dailySaved.history)) : [JSON.parse(JSON.stringify(dailySaved.board))]);
             setHistoryIndex(dailySaved.historyIndex ?? 0);
+            lastAttemptedSizeRef.current = todayInfo.size; // Track daily puzzle size
 
             return; // Successfully restored daily session
           }
@@ -451,6 +459,7 @@ function App() {
             setShowSideMenu(practiceSaved.showMenu ?? false);
             setHistory(practiceSaved.history ? JSON.parse(JSON.stringify(practiceSaved.history)) : [JSON.parse(JSON.stringify(practiceSaved.board))]);
             setHistoryIndex(practiceSaved.historyIndex ?? 0);
+            lastAttemptedSizeRef.current = lastDifficulty; // Track practice puzzle size
 
             return; // Successfully restored practice session
           }
@@ -459,8 +468,8 @@ function App() {
         console.error('[Mount] Error restoring session from storage:', error);
       }
 
-      // Fallback: load today's daily puzzle
-      // BUT: Only if we don't have a lastAttemptedSizeRef that indicates a practice puzzle was attempted
+      // Fallback: Check lastAttemptedSizeRef first (persisted from localStorage or previous attempts)
+      // This ensures we don't default to 3x3 daily puzzle if user was trying a different size
       if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
         console.log('[Mount] No saved session, but lastAttemptedSizeRef indicates practice puzzle was attempted, loading:', lastAttemptedSizeRef.current);
         await handleDifficultySelect(lastAttemptedSizeRef.current);
@@ -867,6 +876,7 @@ function App() {
         };
         sessions.daily = dailySessions;
         sessions.lastMode = 'daily';
+        sessions.lastAttemptedSize = puzzle.size; // Persist daily puzzle size
 
         localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
       } else if (selectedDifficulty !== null) {
@@ -890,6 +900,7 @@ function App() {
         sessions.practice = practiceSessions;
         sessions.lastMode = 'practice';
         sessions.lastDifficulty = selectedDifficulty;
+        sessions.lastAttemptedSize = selectedDifficulty; // Persist last attempted size
 
         localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
       }
