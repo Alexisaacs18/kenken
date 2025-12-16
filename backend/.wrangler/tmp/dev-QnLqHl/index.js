@@ -765,13 +765,24 @@ async function handleGenerateBySize(request, env) {
     }
     if (size >= 7) {
       const db = env.PUZZLES_DB || env.DB;
-      if (db) {
-        try {
-          const difficultyLabel = getDifficultyFromSize(size);
-          const result = await db.prepare(
-            "SELECT data FROM puzzles WHERE size = ? AND difficulty = ? LIMIT 1"
-          ).bind(size, difficultyLabel).first();
-          if (result && result.data) {
+      if (!db) {
+        console.error(`No D1 database binding available. Checked: PUZZLES_DB=${!!env.PUZZLES_DB}, DB=${!!env.DB}`);
+        return new Response(
+          JSON.stringify({
+            error: `D1 database not configured. Large puzzles (${size}x${size}) require D1.`
+          }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      try {
+        const difficultyLabel = getDifficultyFromSize(size);
+        console.log(`Querying D1 for ${size}x${size} with difficulty "${difficultyLabel}"`);
+        const result = await db.prepare(
+          "SELECT data FROM puzzles WHERE size = ? AND difficulty = ? LIMIT 1"
+        ).bind(size, difficultyLabel).first();
+        if (result && result.data) {
+          console.log(`Found puzzle in D1 for ${size}x${size}, parsing...`);
+          try {
             const puzzleData = JSON.parse(result.data);
             console.log(`Served ${size}x${size} from D1 (preloaded)`);
             return new Response(JSON.stringify({
@@ -785,10 +796,16 @@ async function handleGenerateBySize(request, env) {
             }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" }
             });
+          } catch (parseError) {
+            console.error(`Error parsing D1 data for ${size}x${size}:`, parseError);
           }
-        } catch (dbError) {
-          console.error("Error querying D1:", dbError);
+        } else {
+          console.log(`No puzzle found in D1 for ${size}x${size} with difficulty "${difficultyLabel}"`);
+          const allPuzzles = await db.prepare("SELECT size, difficulty FROM puzzles").all();
+          console.log(`Available puzzles in D1:`, allPuzzles.results);
         }
+      } catch (dbError) {
+        console.error(`Error querying D1 for ${size}x${size}:`, dbError);
       }
       return new Response(
         JSON.stringify({
