@@ -40,6 +40,7 @@ function App() {
   const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Store hint timeout for cleanup
   const solvedTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Store solved modal timeout for cleanup
   const lostTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Store lost modal timeout for cleanup
+  const lastAttemptedSizeRef = useRef<number | null>(null); // Track last attempted puzzle size for refresh
   const [showTutorial, setShowTutorial] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
@@ -171,6 +172,7 @@ function App() {
     setDailyPuzzleInfo(todayInfo);
     setIsDailyPuzzle(true);
     setSelectedDifficulty(null);
+    lastAttemptedSizeRef.current = todayInfo.size; // Track this as the last attempted size
     
     // Full state reset BEFORE loading new puzzle
     resetAllGameState();
@@ -270,6 +272,7 @@ function App() {
   const handleDifficultySelect = async (size: number) => {
     setSelectedDifficulty(size);
     setIsDailyPuzzle(false); // This is practice mode, not daily puzzle
+    lastAttemptedSizeRef.current = size; // Track this as the last attempted size
     
     // Full state reset BEFORE loading new puzzle
     resetAllGameState();
@@ -622,8 +625,8 @@ function App() {
   // If no puzzle is loaded, clears cache and retries loading the SAME puzzle that was attempted
   const handleRefreshPuzzle = async () => {
     // Determine what puzzle we're trying to refresh
-    // Priority: 1) Current puzzle size, 2) selectedDifficulty, 3) dailyPuzzleInfo, 4) daily puzzle
-    const targetSize = puzzle?.size || selectedDifficulty || dailyPuzzleInfo.size;
+    // Priority: 1) Current puzzle size, 2) selectedDifficulty, 3) lastAttemptedSizeRef, 4) dailyPuzzleInfo
+    const targetSize = puzzle?.size || selectedDifficulty || lastAttemptedSizeRef.current || dailyPuzzleInfo.size;
     const wasPracticeMode = selectedDifficulty !== null && !isDailyPuzzle;
     
     // Clear localStorage cache
@@ -685,24 +688,36 @@ function App() {
       setLoading(true);
       
       try {
-        // If we have a selectedDifficulty, use that (practice mode)
-        if (selectedDifficulty || (wasPracticeMode && targetSize)) {
-          const sizeToLoad = selectedDifficulty || targetSize;
-          console.log(`[Refresh] Retrying practice puzzle: ${sizeToLoad}x${sizeToLoad}`);
-          await handleDifficultySelect(sizeToLoad);
-        } else if (isDailyPuzzle || !wasPracticeMode) {
-          // Daily puzzle mode
-          console.log(`[Refresh] Retrying daily puzzle: ${dailyPuzzleInfo.size}x${dailyPuzzleInfo.size}`);
+        // Log current state for debugging
+        console.log(`[Refresh] State check:`, {
+          selectedDifficulty,
+          isDailyPuzzle,
+          wasPracticeMode,
+          targetSize,
+          lastAttemptedSize: lastAttemptedSizeRef.current,
+          dailyPuzzleSize: dailyPuzzleInfo.size,
+        });
+        
+        // Priority 1: If selectedDifficulty is set, always use it (practice mode)
+        // This handles the case where a practice puzzle failed to load
+        if (selectedDifficulty !== null) {
+          console.log(`[Refresh] Using selectedDifficulty: ${selectedDifficulty}x${selectedDifficulty}`);
+          await handleDifficultySelect(selectedDifficulty);
+        } 
+        // Priority 2: If lastAttemptedSizeRef is set and different from daily, use it
+        else if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
+          console.log(`[Refresh] Using lastAttemptedSizeRef: ${lastAttemptedSizeRef.current}x${lastAttemptedSizeRef.current}`);
+          await handleDifficultySelect(lastAttemptedSizeRef.current);
+        }
+        // Priority 3: If targetSize is different from daily puzzle size, it's likely a practice puzzle
+        else if (targetSize && targetSize !== dailyPuzzleInfo.size) {
+          console.log(`[Refresh] Using targetSize (differs from daily): ${targetSize}x${targetSize}`);
+          await handleDifficultySelect(targetSize);
+        }
+        // Priority 4: Otherwise, load daily puzzle
+        else {
+          console.log(`[Refresh] Loading daily puzzle: ${dailyPuzzleInfo.size}x${dailyPuzzleInfo.size}`);
           await handleDailyPuzzle();
-        } else {
-          // Fallback: try to load based on targetSize
-          if (targetSize && targetSize !== dailyPuzzleInfo.size) {
-            console.log(`[Refresh] Fallback: loading practice puzzle ${targetSize}x${targetSize}`);
-            await handleDifficultySelect(targetSize);
-          } else {
-            console.log(`[Refresh] Fallback: loading daily puzzle`);
-            await handleDailyPuzzle();
-          }
         }
       } catch (error) {
         console.error('[Refresh] Error reloading puzzle:', error);
