@@ -6,6 +6,7 @@ import SideMenu from './components/SideMenu';
 import ScoreModal from './components/ScoreModal';
 import TutorialModal from './components/TutorialModal';
 import DailyInstructionsModal from './components/DailyInstructionsModal';
+import ComingSoonModal from './components/ComingSoonModal';
 import type { Puzzle, Algorithm, GameStats as GameStatsType } from './types';
 import { generatePuzzle, validateBoard } from './api';
 import { isPuzzleSolved } from './utils/puzzleUtils';
@@ -45,6 +46,8 @@ function App() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showDailyInstructions, setShowDailyInstructions] = useState(false);
+  const [showComingSoon, setShowComingSoon] = useState(false);
+  const [comingSoonGameName, setComingSoonGameName] = useState('');
   const [selectedDifficulty, setSelectedDifficulty] = useState<number | null>(null);
   const [algorithm] = useState<Algorithm>('FC+MRV');
   const [dailyPuzzleInfo, setDailyPuzzleInfo] = useState(getTodayPuzzleInfo());
@@ -1001,17 +1004,23 @@ function App() {
     <div className="min-h-screen bg-[#F7F6F3]">
       {/* Header - Mobile First */}
       <div className="sticky top-0 bg-[#F7F6F3] border-b border-[#E0E0E0] z-30">
-        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+        <div className="container mx-auto px-4 py-3 relative flex items-center">
           <button
             onClick={() => setShowSideMenu(true)}
             className="text-2xl text-[#1A1A1A] hover:opacity-70"
           >
             ☰
           </button>
-          <h1 className="text-2xl font-semibold text-[#1A1A1A] tracking-tight" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+          <h1 className="absolute left-1/2 transform -translate-x-1/2 text-2xl font-semibold text-[#1A1A1A] tracking-tight" style={{ fontFamily: "'Lora', Georgia, serif" }}>
             Puzzalo Games
           </h1>
-          <div className="w-8" /> {/* Spacer for centering */}
+          <button
+            onClick={() => setShowTutorial(true)}
+            className="text-sm font-medium text-[#1A1A1A] hover:opacity-70 px-3 py-1 ml-auto"
+            style={{ fontFamily: "'Lora', Georgia, serif" }}
+          >
+            How to Play
+          </button>
         </div>
       </div>
 
@@ -1156,9 +1165,9 @@ function App() {
         onClose={() => setShowSideMenu(false)}
         onDifficultySelect={handleDifficultySelect}
         onDailyPuzzle={handleDailyPuzzle}
-        onShowTutorial={() => {
-          setShowTutorial(true);
-          setShowSideMenu(false);
+        onShowComingSoon={(gameName: string) => {
+          setComingSoonGameName(gameName);
+          setShowComingSoon(true);
         }}
         selectedDifficulty={selectedDifficulty}
         loading={loading}
@@ -1191,6 +1200,13 @@ function App() {
 
       {/* Daily Instructions Modal */}
       <DailyInstructionsModal isOpen={showDailyInstructions} onClose={handleCloseDailyInstructions} />
+
+      {/* Coming Soon Modal */}
+      <ComingSoonModal 
+        isOpen={showComingSoon} 
+        onClose={() => setShowComingSoon(false)} 
+        gameName={comingSoonGameName}
+      />
     </div>
   );
 }

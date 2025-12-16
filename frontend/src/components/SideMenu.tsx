@@ -20,7 +20,7 @@ interface SideMenuProps {
   onClose: () => void;
   onDifficultySelect: (size: number) => void;
   onDailyPuzzle: () => void;
-  onShowTutorial: () => void;
+  onShowComingSoon: (gameName: string) => void;
   selectedDifficulty: number | null;
   loading: boolean;
   isDailyPuzzle: boolean;
@@ -31,7 +31,7 @@ export default function SideMenu({
   onClose,
   onDifficultySelect,
   onDailyPuzzle,
-  onShowTutorial,
+  onShowComingSoon,
   selectedDifficulty,
   loading,
   isDailyPuzzle,
@@ -144,19 +144,35 @@ export default function SideMenu({
             </div>
           </div>
 
-          {/* How to Play */}
+          {/* Other Games */}
           <div className="border-t border-[#E0E0E0] pt-6">
-            <button
-              onClick={() => {
-                onShowTutorial();
-                onClose();
-              }}
-              className="w-full px-4 py-2.5 text-sm font-medium text-[#1A1A1A] border border-[#1A1A1A] rounded-sm hover:bg-[#F5F5F5] transition-colors text-left"
-              style={{ fontFamily: "'Lora', Georgia, serif" }}
-            >
-              How to Play
-            </button>
+            <h3 className="text-sm font-medium text-[#666666] mb-3" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+              Other Games
+            </h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => {
+                  onShowComingSoon('Kakuro');
+                  onClose();
+                }}
+                className="w-full px-4 py-2.5 text-sm font-medium text-[#1A1A1A] border border-[#E0E0E0] rounded-sm hover:bg-[#F5F5F5] transition-colors text-left"
+                style={{ fontFamily: "'Lora', Georgia, serif" }}
+              >
+                Kakuro
+              </button>
+              <button
+                onClick={() => {
+                  onShowComingSoon('Sudoku');
+                  onClose();
+                }}
+                className="w-full px-4 py-2.5 text-sm font-medium text-[#1A1A1A] border border-[#E0E0E0] rounded-sm hover:bg-[#F5F5F5] transition-colors text-left"
+                style={{ fontFamily: "'Lora', Georgia, serif" }}
+              >
+                Sudoku
+              </button>
+            </div>
           </div>
+
         </div>
       </div>
     </>
