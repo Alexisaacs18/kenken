@@ -618,36 +618,9 @@ function App() {
   };
 
   // Handle refresh puzzle - resets current puzzle to blank state (same puzzle, fresh start)
-  const handleRefreshPuzzle = () => {
-    if (!puzzle) return;
-    
-    // Reset board to blank
-    const newBoard = initializeBoard(puzzle.size);
-    setBoard(newBoard);
-    
-    // Reset game state but keep the same puzzle
-    setSelectedCell(null);
-    setGameStats({
-      timeElapsed: 0,
-      movesMade: 0,
-      hintsUsed: 0,
-      startTime: Date.now(),
-      attempts: gameStats.attempts + 1, // Increment attempts
-    });
-    setChecksUsed(0);
-    setHintsRemaining(3);
-    setChecksRemaining(3);
-    setErrors([]);
-    setHistory([JSON.parse(JSON.stringify(newBoard))]);
-    setHistoryIndex(0);
-    setSolved(false);
-    setLost(false);
-    setHintHighlight(null);
-    setCheckHighlights(new Map());
-    setLastAutoCheckedBoard('');
-    setShowScoreModal(false);
-    
-    // Clear localStorage cache for this specific puzzle
+  // If no puzzle is loaded, clears cache and retries loading
+  const handleRefreshPuzzle = async () => {
+    // Clear localStorage cache
     if (typeof window !== 'undefined') {
       const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
@@ -668,6 +641,54 @@ function App() {
         } catch (error) {
           console.error('[Refresh] Error clearing localStorage:', error);
         }
+      }
+    }
+    
+    // If puzzle is loaded, reset it to blank
+    if (puzzle) {
+      // Reset board to blank
+      const newBoard = initializeBoard(puzzle.size);
+      setBoard(newBoard);
+      
+      // Reset game state but keep the same puzzle
+      setSelectedCell(null);
+      setGameStats({
+        timeElapsed: 0,
+        movesMade: 0,
+        hintsUsed: 0,
+        startTime: Date.now(),
+        attempts: gameStats.attempts + 1, // Increment attempts
+      });
+      setChecksUsed(0);
+      setHintsRemaining(3);
+      setChecksRemaining(3);
+      setErrors([]);
+      setHistory([JSON.parse(JSON.stringify(newBoard))]);
+      setHistoryIndex(0);
+      setSolved(false);
+      setLost(false);
+      setHintHighlight(null);
+      setCheckHighlights(new Map());
+      setLastAutoCheckedBoard('');
+      setShowScoreModal(false);
+    } else {
+      // No puzzle loaded - retry loading
+      resetAllGameState();
+      setShowScoreModal(false);
+      setLoading(true);
+      
+      try {
+        if (isDailyPuzzle) {
+          await handleDailyPuzzle();
+        } else if (selectedDifficulty) {
+          await handleDifficultySelect(selectedDifficulty);
+        } else {
+          // Default to daily puzzle
+          await handleDailyPuzzle();
+        }
+      } catch (error) {
+        console.error('[Refresh] Error reloading puzzle:', error);
+        setLoading(false);
       }
     }
   };
@@ -982,6 +1003,20 @@ function App() {
                 </div>
               </div>
             )}
+            {/* Refresh Button - Always visible, even when loading or puzzle not loaded */}
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={handleRefreshPuzzle}
+                disabled={loading}
+                className="px-4 py-2 text-sm font-medium text-[#666666] bg-white border border-[#E0E0E0] rounded-sm hover:bg-[#F7F6F3] hover:border-[#999999] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ fontFamily: "'Lora', Georgia, serif" }}
+              >
+                <svg className="w-4 h-4 text-[#666666]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>{loading ? 'Loading...' : 'Refresh Puzzle'}</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
