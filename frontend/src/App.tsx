@@ -617,7 +617,7 @@ function App() {
     handleCellChange(row, col, 0);
   };
 
-  // Handle refresh puzzle (reset board to blank, increment attempts)
+  // Handle refresh puzzle - resets current puzzle to blank state (same puzzle, fresh start)
   const handleRefreshPuzzle = () => {
     if (!puzzle) return;
     
@@ -625,7 +625,7 @@ function App() {
     const newBoard = initializeBoard(puzzle.size);
     setBoard(newBoard);
     
-    // Reset game state but keep puzzle
+    // Reset game state but keep the same puzzle
     setSelectedCell(null);
     setGameStats({
       timeElapsed: 0,
@@ -646,6 +646,30 @@ function App() {
     setCheckHighlights(new Map());
     setLastAutoCheckedBoard('');
     setShowScoreModal(false);
+    
+    // Clear localStorage cache for this specific puzzle
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        try {
+          const sessions = JSON.parse(raw);
+          if (isDailyPuzzle) {
+            const todayInfo = getTodayPuzzleInfo();
+            if (sessions.daily) {
+              delete sessions.daily[todayInfo.date];
+              localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+            }
+          } else if (selectedDifficulty) {
+            if (sessions.practice) {
+              delete sessions.practice[selectedDifficulty];
+              localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+            }
+          }
+        } catch (error) {
+          console.error('[Refresh] Error clearing localStorage:', error);
+        }
+      }
+    }
   };
 
   // Calculate score
@@ -885,21 +909,20 @@ function App() {
               />
             </div>
 
-            {/* Refresh Button - Shows when puzzle is lost (solved incorrectly) - Works for both daily and practice */}
-            {lost && (
-              <div className="flex justify-center mt-6">
-                <button
-                  onClick={handleRefreshPuzzle}
-                  className="px-4 py-2 text-sm font-medium text-[#666666] bg-white border border-[#E0E0E0] rounded-sm hover:bg-[#F7F6F3] hover:border-[#999999] transition-colors flex items-center justify-center gap-2"
-                  style={{ fontFamily: "'Lora', Georgia, serif" }}
-                >
-                  <svg className="w-4 h-4 text-[#666666]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>Refresh Puzzle</span>
-                </button>
-              </div>
-            )}
+            {/* Refresh Button - Always visible, clears cache and reloads puzzle */}
+            <div className="flex justify-center mt-4">
+              <button
+                onClick={handleRefreshPuzzle}
+                disabled={loading}
+                className="px-4 py-2 text-sm font-medium text-[#666666] bg-white border border-[#E0E0E0] rounded-sm hover:bg-[#F7F6F3] hover:border-[#999999] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ fontFamily: "'Lora', Georgia, serif" }}
+              >
+                <svg className="w-4 h-4 text-[#666666]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>{loading ? 'Loading...' : 'Refresh Puzzle'}</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="bg-white p-12 rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-center border border-[#E0E0E0] min-h-[60vh] flex items-center justify-center">
