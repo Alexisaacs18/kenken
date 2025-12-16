@@ -260,6 +260,8 @@ function App() {
         date: todayInfo.date,
         error: error,
       });
+      // Keep lastAttemptedSizeRef set to today's size so refresh knows what to retry
+      lastAttemptedSizeRef.current = todayInfo.size;
       alert(errorMessage);
       // Don't set loading to false on error - keep it showing so user knows something went wrong
       // setLoading(false);
@@ -357,9 +359,11 @@ function App() {
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'Failed to generate puzzle. Make sure the backend is running.';
-      alert(errorMessage);
+      // Keep lastAttemptedSizeRef set so refresh knows what to retry
+      lastAttemptedSizeRef.current = size;
       // Don't clear selectedDifficulty on error - keep it so refresh knows what to retry
       // setSelectedDifficulty(null);
+      alert(errorMessage);
     } finally {
       // Reset loading state last to ensure all state is set
       setLoading(false);
@@ -456,8 +460,14 @@ function App() {
       }
 
       // Fallback: load today's daily puzzle
-      console.log('[Mount] No saved session found, loading daily puzzle...');
-      await handleDailyPuzzle();
+      // BUT: Only if we don't have a lastAttemptedSizeRef that indicates a practice puzzle was attempted
+      if (lastAttemptedSizeRef.current !== null && lastAttemptedSizeRef.current !== dailyPuzzleInfo.size) {
+        console.log('[Mount] No saved session, but lastAttemptedSizeRef indicates practice puzzle was attempted, loading:', lastAttemptedSizeRef.current);
+        await handleDifficultySelect(lastAttemptedSizeRef.current);
+      } else {
+        console.log('[Mount] No saved session found, loading daily puzzle...');
+        await handleDailyPuzzle();
+      }
     };
 
     void tryRestoreSession();
