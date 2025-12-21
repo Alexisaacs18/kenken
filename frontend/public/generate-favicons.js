@@ -8,9 +8,13 @@
  * node generate-favicons.js
  */
 
-const sharp = require('sharp');
-const fs = require('fs');
-const path = require('path');
+import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const sizes = [
   { name: 'favicon-16x16.png', size: 16 },
@@ -20,7 +24,7 @@ const sizes = [
   { name: 'android-chrome-512x512.png', size: 512 },
 ];
 
-const publicDir = path.join(__dirname);
+const publicDir = __dirname;
 const svgPath = path.join(publicDir, 'favicon.svg');
 
 async function generateFavicons() {
